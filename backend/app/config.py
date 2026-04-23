@@ -9,7 +9,14 @@ def normalize_database_url(url: str) -> str:
 
 def parse_csv_env(name: str, default: str = "") -> list[str]:
     raw = os.getenv(name, default)
-    return [item.strip() for item in raw.split(",") if item.strip()]
+    return [item.strip().strip('"').strip("'") for item in raw.split(",") if item.strip()]
+
+
+def parse_bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 DATABASE_URL = normalize_database_url(
@@ -41,3 +48,4 @@ CORS_ALLOW_ORIGINS = parse_csv_env(
     "CORS_ALLOW_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173",
 )
+CORS_ALLOW_ALL = parse_bool_env("CORS_ALLOW_ALL", default=False)
