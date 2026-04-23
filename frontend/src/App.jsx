@@ -1,4 +1,5 @@
-import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import AuthPage from './pages/AuthPage'
@@ -8,6 +9,16 @@ import './styles.css'
 
 export default function App() {
   const { token, logout } = useAuth()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function onSessionExpired() {
+      navigate('/auth', { replace: true })
+    }
+
+    window.addEventListener('logix-session-expired', onSessionExpired)
+    return () => window.removeEventListener('logix-session-expired', onSessionExpired)
+  }, [navigate])
 
   return (
     <main className="app">

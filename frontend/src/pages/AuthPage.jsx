@@ -1,106 +1,73 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login, registerUser } from '../api/client'
+import { requestOtp, verifyOtp } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 export default function AuthPage() {
   const navigate = useNavigate()
-  const { saveToken } = useAuth()
+  const { saveTokens } = useAuth()
   const [error, setError] = useState('')
-  const [loginForm, setLoginForm] = useState({ phone: '', password: '' })
-  const [registerForm, setRegisterForm] = useState({
-    phone_e164: '',
-    password: '',
-    first_name: '',
-    last_name: '',
-    user_type: 'customer',
-  })
+  const [message, setMessage] = useState('')
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [otpRequested, setOtpRequested] = useState(false)
 
-  async function onLogin(e) {
+  async function onRequestOtp(e) {
     e.preventDefault()
     setError('')
+    setMessage('')
     try {
-      const res = await login(loginForm.phone, loginForm.password)
-      saveToken(res.access_token)
+      await requestOtp(phone)
+      setOtpRequested(true)
+      setMessage('Code OTP envoye par SMS.')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onVerifyOtp(e) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+    try {
+      const res = await verifyOtp(phone, code)
+      saveTokens(res.access_token, res.refresh_token || '')
       navigate('/shipments')
     } catch (err) {
       setError(err.message)
     }
   }
 
-  async function onRegister(e) {
-    e.preventDefault()
-    setError('')
-    try {
-      await registerUser(registerForm)
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
   return (
-    <section className="grid-two">
+    <section>
       <article className="card">
-        <h2>Login</h2>
-        <form className="form" onSubmit={onLogin}>
+        <h2>Login OTP</h2>
+        <form className="form" onSubmit={onRequestOtp}>
           <input
             placeholder="phone_e164"
-            value={loginForm.phone}
-            onChange={(e) => setLoginForm((s) => ({ ...s, phone: e.target.value }))}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
             required
           />
-          <input
-            type="password"
-            placeholder="password"
-            value={loginForm.password}
-            onChange={(e) => setLoginForm((s) => ({ ...s, password: e.target.value }))}
-            required
-          />
-          <button type="submit">Se connecter</button>
+          <button type="submit">Recevoir OTP</button>
         </form>
+
+        {otpRequested ? (
+          <form className="form" onSubmit={onVerifyOtp}>
+            <input
+              placeholder="code OTP"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              minLength={4}
+              maxLength={8}
+              required
+            />
+            <button type="submit">Verifier OTP</button>
+          </form>
+        ) : null}
       </article>
 
-      <article className="card">
-        <h2>Register</h2>
-        <form className="form" onSubmit={onRegister}>
-          <input
-            placeholder="phone_e164"
-            value={registerForm.phone_e164}
-            onChange={(e) => setRegisterForm((s) => ({ ...s, phone_e164: e.target.value }))}
-            required
-          />
-          <input
-            type="password"
-            placeholder="password"
-            value={registerForm.password}
-            onChange={(e) => setRegisterForm((s) => ({ ...s, password: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="first_name"
-            value={registerForm.first_name}
-            onChange={(e) => setRegisterForm((s) => ({ ...s, first_name: e.target.value }))}
-          />
-          <input
-            placeholder="last_name"
-            value={registerForm.last_name}
-            onChange={(e) => setRegisterForm((s) => ({ ...s, last_name: e.target.value }))}
-          />
-          <select
-            value={registerForm.user_type}
-            onChange={(e) => setRegisterForm((s) => ({ ...s, user_type: e.target.value }))}
-          >
-            <option value="customer">customer</option>
-            <option value="business">business</option>
-            <option value="agent">agent</option>
-            <option value="hub">hub</option>
-            <option value="driver">driver</option>
-            <option value="admin">admin</option>
-          </select>
-          <button type="submit">Créer le compte</button>
-        </form>
-      </article>
-
+      {message ? <p>{message}</p> : null}
       {error ? <p className="error">{error}</p> : null}
     </section>
   )

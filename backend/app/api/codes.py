@@ -2,13 +2,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.enums import UserTypeEnum
 from app.schemas.codes import (
     PickupCodeResponse,
     PickupCodeValidationRequest,
     PickupCodeValidationResponse,
 )
 from app.services.code_service import create_pickup_code, validate_pickup_code
-from app.dependencies import get_current_user
+from app.dependencies import require_roles
 
 router = APIRouter(prefix="/codes", tags=["codes"])
 
@@ -17,7 +18,13 @@ router = APIRouter(prefix="/codes", tags=["codes"])
 def create_pickup_code_endpoint(
     shipment_id: UUID,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
 ):
     row, raw = create_pickup_code(db, shipment_id)
     db.commit()
@@ -33,7 +40,13 @@ def validate_pickup_code_endpoint(
     shipment_id: UUID,
     payload: PickupCodeValidationRequest,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
 ):
     valid, message = validate_pickup_code(db, shipment_id, payload.code)
     db.commit()
