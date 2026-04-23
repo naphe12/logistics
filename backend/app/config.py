@@ -7,6 +7,11 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
+def parse_csv_env(name: str, default: str = "") -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 DATABASE_URL = normalize_database_url(
     os.getenv("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/postgres")
 )
@@ -30,4 +35,9 @@ SMS_SENDER_ID = os.getenv("SMS_SENDER_ID", "LOGIX")
 AFRICASTALKING_BASE_URL = os.getenv(
     "AFRICASTALKING_BASE_URL",
     "https://api.africastalking.com/version1/messaging",
+)
+
+CORS_ALLOW_ORIGINS = parse_csv_env(
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
 )

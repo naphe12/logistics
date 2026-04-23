@@ -43,6 +43,11 @@ def _hash_otp(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _placeholder_password_hash(seed: str) -> str:
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
 def _generate_otp(length: int = 6) -> str:
     alphabet = "0123456789"
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -53,7 +58,11 @@ def _get_or_create_user(db: Session, phone_e164: str) -> User:
     if user:
         return user
 
-    user = User(phone_e164=phone_e164, user_type=UserTypeEnum.customer)
+    user = User(
+        phone_e164=phone_e164,
+        user_type=UserTypeEnum.customer,
+        password_hash=_placeholder_password_hash(secrets.token_urlsafe(18)),
+    )
     db.add(user)
     db.flush()
     return user

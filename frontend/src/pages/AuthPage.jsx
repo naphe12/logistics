@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { requestOtp, verifyOtp } from '../api/client'
+import { login, requestOtp, verifyOtp } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 export default function AuthPage() {
   const navigate = useNavigate()
   const { saveTokens } = useAuth()
+  const devLoginEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [phone, setPhone] = useState('')
@@ -31,6 +32,19 @@ export default function AuthPage() {
     setMessage('')
     try {
       const res = await verifyOtp(phone, code)
+      saveTokens(res.access_token, res.refresh_token || '')
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onDevLogin(e) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+    try {
+      const res = await login(phone)
       saveTokens(res.access_token, res.refresh_token || '')
       navigate('/dashboard')
     } catch (err) {
@@ -64,6 +78,14 @@ export default function AuthPage() {
               required
             />
             <button type="submit">Verifier OTP</button>
+          </form>
+        ) : null}
+
+        {devLoginEnabled ? (
+          <form className="form" onSubmit={onDevLogin}>
+            <button type="submit" className="button-secondary">
+              Connexion rapide (dev)
+            </button>
           </form>
         ) : null}
 
