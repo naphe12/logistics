@@ -1,15 +1,19 @@
 import { useEffect } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import Sidebar from './components/Sidebar'
 import AuthPage from './pages/AuthPage'
+import HomePage from './pages/HomePage'
 import ShipmentsPage from './pages/ShipmentsPage'
 import TrackingPage from './pages/TrackingPage'
 import './styles.css'
 
 export default function App() {
-  const { token, logout } = useAuth()
+  const { token } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isAuthPage = location.pathname === '/auth'
 
   useEffect(() => {
     function onSessionExpired() {
@@ -21,42 +25,48 @@ export default function App() {
   }, [navigate])
 
   return (
-    <main className="app">
-      <header className="topbar">
-        <div>
-          <h1>Logix Frontend</h1>
-          <p>Base React + Vite branchée au backend FastAPI.</p>
-        </div>
-        <nav className="nav">
-          <Link to="/auth">Auth</Link>
-          <Link to="/shipments">Shipments</Link>
-          <Link to="/tracking">Tracking</Link>
-          <button onClick={logout} disabled={!token}>
-            Logout
-          </button>
-        </nav>
-      </header>
+    <main className={isAuthPage ? 'auth-app' : 'app-shell'}>
+      {isAuthPage ? null : <Sidebar />}
+      <div className={isAuthPage ? 'auth-content' : 'content-area'}>
+        {!isAuthPage ? (
+          <header className="dashboard-topbar">
+            <div>
+              <p className="eyebrow">Backoffice</p>
+              <h1>Logix Operations</h1>
+            </div>
+          </header>
+        ) : null}
 
-      <Routes>
-        <Route path="/" element={<Navigate to={token ? '/shipments' : '/auth'} replace />} />
-        <Route path="/auth" element={<AuthPage />} />
-        <Route
-          path="/shipments"
-          element={
-            <ProtectedRoute>
-              <ShipmentsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/tracking"
-          element={
-            <ProtectedRoute>
-              <TrackingPage />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+        <Routes>
+          <Route path="/" element={<Navigate to={token ? '/dashboard' : '/auth'} replace />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shipments"
+            element={
+              <ProtectedRoute>
+                <ShipmentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tracking"
+            element={
+              <ProtectedRoute>
+                <TrackingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to={token ? '/dashboard' : '/auth'} replace />} />
+        </Routes>
+      </div>
     </main>
   )
 }

@@ -2,6 +2,15 @@ import { useState } from 'react'
 import { checkHealth, updateShipmentStatus } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
+const statusOptions = [
+  'created',
+  'ready_for_pickup',
+  'picked_up',
+  'in_transit',
+  'arrived_at_relay',
+  'delivered',
+]
+
 export default function TrackingPage() {
   const { token } = useAuth()
   const [health, setHealth] = useState('idle')
@@ -43,46 +52,68 @@ export default function TrackingPage() {
   }
 
   return (
-    <section className="grid-two">
-      <article className="card">
-        <h2>API Health</h2>
-        <button onClick={onHealth}>Tester /health</button>
-        <p>Etat: {health}</p>
+    <section className="page-grid two-cols">
+      <article className="panel">
+        <p className="eyebrow">Monitoring</p>
+        <h2>Sante de l API</h2>
+        <button type="button" onClick={onHealth}>
+          Verifier /health
+        </button>
+        <p>
+          Etat actuel: <strong>{health}</strong>
+        </p>
       </article>
 
-      <article className="card">
-        <h2>Mettre à jour un statut</h2>
+      <article className="panel">
+        <p className="eyebrow">Tracking</p>
+        <h2>Mise a jour de statut</h2>
         <form className="form" onSubmit={onUpdate}>
-          <input
-            placeholder="shipment_id (UUID)"
-            value={form.shipment_id}
-            onChange={(e) => setForm((s) => ({ ...s, shipment_id: e.target.value }))}
-            required
-          />
-          <select
-            value={form.status}
-            onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}
-          >
-            <option value="in_transit">in_transit</option>
-            <option value="delivered">delivered</option>
-            <option value="created">created</option>
-          </select>
-          <input
-            placeholder="event_type"
-            value={form.event_type}
-            onChange={(e) => setForm((s) => ({ ...s, event_type: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="relay_id (optionnel)"
-            value={form.relay_id}
-            onChange={(e) => setForm((s) => ({ ...s, relay_id: e.target.value }))}
-          />
+          <label>
+            Shipment ID
+            <input
+              placeholder="UUID"
+              value={form.shipment_id}
+              onChange={(e) => setForm((s) => ({ ...s, shipment_id: e.target.value }))}
+              required
+            />
+          </label>
+          <label>
+            Nouveau statut
+            <select
+              value={form.status}
+              onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}
+            >
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Event type
+            <input
+              placeholder="shipment_in_transit"
+              value={form.event_type}
+              onChange={(e) => setForm((s) => ({ ...s, event_type: e.target.value }))}
+              required
+            />
+          </label>
+          <label>
+            Relay ID (optionnel)
+            <input
+              placeholder="UUID relay"
+              value={form.relay_id}
+              onChange={(e) => setForm((s) => ({ ...s, relay_id: e.target.value }))}
+            />
+          </label>
           <button type="submit" disabled={!token}>
-            Mettre à jour
+            Mettre a jour
           </button>
         </form>
-        <p>Résultat: {result || '-'}</p>
+        <p>
+          Resultat: <strong>{result || '-'}</strong>
+        </p>
       </article>
 
       {error ? <p className="error">{error}</p> : null}

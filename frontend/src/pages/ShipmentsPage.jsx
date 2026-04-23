@@ -25,31 +25,53 @@ export default function ShipmentsPage() {
   }
 
   return (
-    <section className="card">
-      <h2>Créer un colis</h2>
-      <form className="form" onSubmit={onSubmit}>
-        <input
-          value={form.sender_phone}
-          onChange={(e) => setForm((s) => ({ ...s, sender_phone: e.target.value }))}
-          placeholder="sender_phone"
-          required
-        />
-        <input
-          value={form.receiver_name}
-          onChange={(e) => setForm((s) => ({ ...s, receiver_name: e.target.value }))}
-          placeholder="receiver_name"
-          required
-        />
-        <input
-          value={form.receiver_phone}
-          onChange={(e) => setForm((s) => ({ ...s, receiver_phone: e.target.value }))}
-          placeholder="receiver_phone"
-          required
-        />
-        <button type="submit">Créer</button>
-      </form>
-      <p>Shipment No: {shipmentNo || '-'}</p>
-      {error ? <p className="error">{error}</p> : null}
+    <section className="page-grid">
+      <article className="panel">
+        <p className="eyebrow">Workflow</p>
+        <h2>Creation d un colis</h2>
+        <p>Renseigne les informations de depart et de destination puis lance l expedition.</p>
+      </article>
+
+      <article className="panel">
+        <form className="form" onSubmit={onSubmit}>
+          <label>
+            Telephone expediteur
+            <input
+              value={form.sender_phone}
+              onChange={(e) => setForm((s) => ({ ...s, sender_phone: e.target.value }))}
+              placeholder="+257..."
+              required
+            />
+          </label>
+          <label>
+            Nom destinataire
+            <input
+              value={form.receiver_name}
+              onChange={(e) => setForm((s) => ({ ...s, receiver_name: e.target.value }))}
+              placeholder="Nom complet"
+              required
+            />
+          </label>
+          <label>
+            Telephone destinataire
+            <input
+              value={form.receiver_phone}
+              onChange={(e) => setForm((s) => ({ ...s, receiver_phone: e.target.value }))}
+              placeholder="+257..."
+              required
+            />
+          </label>
+          <button type="submit">Creer le colis</button>
+        </form>
+      </article>
+
+      <article className="panel">
+        <h3>Resultat</h3>
+        <p>
+          Numero colis: <strong>{shipmentNo || '-'}</strong>
+        </p>
+        {error ? <p className="error">{error}</p> : null}
+      </article>
     </section>
   )
 }

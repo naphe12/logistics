@@ -32,19 +32,20 @@ export default function AuthPage() {
     try {
       const res = await verifyOtp(phone, code)
       saveTokens(res.access_token, res.refresh_token || '')
-      navigate('/shipments')
+      navigate('/dashboard')
     } catch (err) {
       setError(err.message)
     }
   }
 
   return (
-    <section>
-      <article className="card">
-        <h2>Login OTP</h2>
+    <section className="auth-wrap">
+      <article className="auth-panel">
+        <p className="eyebrow">Secure Access</p>
+        <h2>Connexion OTP</h2>
         <form className="form" onSubmit={onRequestOtp}>
           <input
-            placeholder="phone_e164"
+            placeholder="+257..."
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
@@ -65,9 +66,9 @@ export default function AuthPage() {
             <button type="submit">Verifier OTP</button>
           </form>
         ) : null}
-      </article>
 
-      {message ? <p>{message}</p> : null}
+        {message ? <p className="status-line">{message}</p> : null}
+      </article>
       {error ? <p className="error">{error}</p> : null}
     </section>
   )
