@@ -1,0 +1,124 @@
+:root {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #132235;
+  background: linear-gradient(120deg, #e9f2ff, #f8fcff 55%, #eafdf5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+header p {
+  margin-top: 8px;
+  color: #41586f;
+}
+
+.nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.nav a {
+  text-decoration: none;
+  color: #18446f;
+  background: #fff;
+  border: 1px solid #c7d7ea;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.card {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #ffffffcc;
+  border: 1px solid #dce8f5;
+  backdrop-filter: blur(6px);
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+}
+
+input,
+button {
+  border-radius: 10px;
+  border: 1px solid #c7d7ea;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: #0f62fe;
+  color: #fff;
+  border-color: #0f62fe;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+select {
+  border-radius: 10px;
+  border: 1px solid #c7d7ea;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+}
+
+.error {
+  color: #a30f26;
+  font-weight: 600;
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+  }
+
+  .grid-two {
+    grid-template-columns: 1fr;
+  }
+}
+
