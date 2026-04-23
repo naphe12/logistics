@@ -1,5 +1,6 @@
 import requests
 from sqlalchemy.orm import Session
+from fastapi import BackgroundTasks
 
 from app.config import SMS_PROVIDER, SMS_API_KEY, SMS_USERNAME, SMS_SENDER_ID, AFRICASTALKING_BASE_URL
 from app.models.notifications import Notification
@@ -35,13 +36,26 @@ class SMSService:
         raise SMSProviderError(f"Unsupported SMS_PROVIDER={SMS_PROVIDER}")
 
 
-def queue_and_send_sms(db: Session, to: str, message: str) -> Notification:
+def _send_sms_background(to: str, message: str) -> None:
+    service = SMSService()
+    service.send(to=to, message=message)
+
+
+def queue_and_send_sms(
+    db: Session,
+    to: str,
+    message: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> Notification:
     notification = Notification(phone=to, message=message, channel=NotificationChannelEnum.sms)
     db.add(notification)
     db.flush()
 
-    service = SMSService()
-    service.send(to=to, message=message)
+    if background_tasks is not None:
+        background_tasks.add_task(_send_sms_background, to, message)
+    else:
+        service = SMSService()
+        service.send(to=to, message=message)
 
     db.commit()
     db.refresh(notification)

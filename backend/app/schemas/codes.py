@@ -8,3 +8,13 @@ class PickupCodeResponse(BaseModel):
     shipment_id: UUID
     code: str
     expires_at: datetime
+
+
+class PickupCodeValidationRequest(BaseModel):
+    code: str
+
+
+class PickupCodeValidationResponse(BaseModel):
+    shipment_id: UUID
+    valid: bool
+    message: str

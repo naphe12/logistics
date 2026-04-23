@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from app.models.shipments import Shipment, ShipmentEvent
 from app.schemas.shipments import ShipmentCreate, ShipmentStatusUpdate
@@ -15,7 +16,11 @@ def generate_shipment_no() -> str:
     return f"PBL-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
 
-def create_shipment(db: Session, payload: ShipmentCreate) -> Shipment:
+def create_shipment(
+    db: Session,
+    payload: ShipmentCreate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Shipment:
     shipment = Shipment(
         shipment_no=generate_shipment_no(),
         sender_id=payload.sender_id,
@@ -43,11 +48,13 @@ def create_shipment(db: Session, payload: ShipmentCreate) -> Shipment:
         db,
         payload.sender_phone,
         f"Colis {shipment.shipment_no} cree avec succes.",
+        background_tasks=background_tasks,
     )
     queue_and_send_sms(
         db,
         payload.receiver_phone,
         f"Votre colis {shipment.shipment_no} est enregistre. Code retrait: {raw_pickup_code}.",
+        background_tasks=background_tasks,
     )
 
     db.refresh(shipment)

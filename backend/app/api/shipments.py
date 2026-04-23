@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.shipments import ShipmentCreate, ShipmentOut, ShipmentStatusUpdate
@@ -12,10 +12,11 @@ router = APIRouter(prefix="/shipments", tags=["shipments"])
 @router.post("", response_model=ShipmentOut)
 def create_shipment_endpoint(
     payload: ShipmentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    return create_shipment(db, payload)
+    return create_shipment(db, payload, background_tasks=background_tasks)
 
 
 @router.patch("/{shipment_id}/status", response_model=ShipmentOut)

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models.ussd import ShipmentCode
+from app.models.ussd import ShipmentCode, ShipmentCodeAttempt
 from app.enums import CodePurposeEnum
 
 
@@ -29,3 +29,31 @@ def create_pickup_code(db: Session, shipment_id):
     db.add(row)
     db.flush()
     return row, raw
+
+
+def validate_pickup_code(db: Session, shipment_id, raw_code: str) -> tuple[bool, str]:
+    now = datetime.now(UTC)
+    expected_hash = hash_code(raw_code)
+
+    active_codes = (
+        db.query(ShipmentCode)
+        .filter(
+            ShipmentCode.shipment_id == shipment_id,
+            ShipmentCode.purpose == CodePurposeEnum.pickup,
+            ShipmentCode.expires_at >= now,
+        )
+        .order_by(ShipmentCode.expires_at.desc())
+        .all()
+    )
+
+    matched_code = next((row for row in active_codes if row.code_hash == expected_hash), None)
+    success = matched_code is not None
+
+    db.add(ShipmentCodeAttempt(shipment_id=shipment_id, success=success))
+    if matched_code is not None:
+        db.delete(matched_code)
+        db.flush()
+        return True, "Pickup code valid"
+
+    db.flush()
+    return False, "Invalid or expired pickup code"
