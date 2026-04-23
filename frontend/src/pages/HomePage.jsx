@@ -55,6 +55,9 @@ export default function HomePage() {
               <Link to="/shipments" className="button-link">
                 Nouveau colis
               </Link>
+              <Link to="/auth" className="button-link button-ghost">
+                Connexion
+              </Link>
               <button type="button" className="button-secondary" onClick={runHealthCheck}>
                 Verifier API
               </button>

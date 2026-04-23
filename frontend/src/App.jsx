@@ -14,6 +14,8 @@ export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
+  const isPublicHome = location.pathname === '/'
+  const hideShell = isAuthPage || isPublicHome
 
   useEffect(() => {
     function onSessionExpired() {
@@ -25,10 +27,10 @@ export default function App() {
   }, [navigate])
 
   return (
-    <main className={isAuthPage ? 'auth-app' : 'app-shell'}>
-      {isAuthPage ? null : <Sidebar />}
-      <div className={isAuthPage ? 'auth-content' : 'content-area'}>
-        {!isAuthPage ? (
+    <main className={isAuthPage ? 'auth-app' : isPublicHome ? 'public-app' : 'app-shell'}>
+      {hideShell ? null : <Sidebar />}
+      <div className={isAuthPage ? 'auth-content' : isPublicHome ? 'public-content' : 'content-area'}>
+        {!hideShell ? (
           <header className="dashboard-topbar">
             <div>
               <p className="eyebrow">Backoffice</p>
@@ -38,7 +40,7 @@ export default function App() {
         ) : null}
 
         <Routes>
-          <Route path="/" element={<Navigate to={token ? '/dashboard' : '/auth'} replace />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route
             path="/dashboard"
@@ -64,7 +66,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Navigate to={token ? '/dashboard' : '/auth'} replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </main>

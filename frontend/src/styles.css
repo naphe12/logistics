@@ -207,6 +207,11 @@ button {
   color: #fff;
 }
 
+.button-ghost {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
 button {
   cursor: pointer;
   background: var(--brand-2);
@@ -362,8 +367,18 @@ button:disabled {
   padding: 18px;
 }
 
+.public-app {
+  min-height: 100vh;
+  padding: 22px 26px 28px;
+}
+
 .auth-content {
   width: min(480px, 100%);
+}
+
+.public-content {
+  width: min(1220px, 100%);
+  margin: 0 auto;
 }
 
 .auth-wrap {
@@ -403,6 +418,10 @@ button:disabled {
 
 @media (max-width: 620px) {
   .content-area {
+    padding: 16px;
+  }
+
+  .public-app {
     padding: 16px;
   }
 
