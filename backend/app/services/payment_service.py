@@ -8,7 +8,8 @@ from app.models.incidents import Commission
 from app.models.payments import PaymentTransaction
 from app.models.shipments import Shipment
 from app.models.statuses import PaymentStatus
-from app.models.transport import Manifest, ManifestShipment, Trip
+from app.models.shipments import Manifest, ManifestShipment
+from app.models.transport import Trip
 from app.schemas.payments import PaymentCreate
 from app.services.audit_service import log_action
 
