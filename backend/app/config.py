@@ -46,6 +46,6 @@ AFRICASTALKING_BASE_URL = os.getenv(
 
 CORS_ALLOW_ORIGINS = parse_csv_env(
     "CORS_ALLOW_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,http://react-frontend-staging-a79c.up.railway.app:5173",
+    "http://localhost:5173,http://127.0.0.1:5173,https://react-frontend-staging-a79c.up.railway.app,http://react-frontend-staging-a79c.up.railway.app:5173,https://react-frontend-staging-a79c.up.railway.app:5173",
 )
 CORS_ALLOW_ALL = parse_bool_env("CORS_ALLOW_ALL", default=False)
