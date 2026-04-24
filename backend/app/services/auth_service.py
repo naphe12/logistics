@@ -1,4 +1,5 @@
 import hashlib
+import math
 import secrets
 from datetime import datetime, timedelta, UTC
 
@@ -28,11 +29,15 @@ class OTPExpiredError(OTPError):
 
 
 class OTPLockedError(OTPError):
-    pass
+    def __init__(self, message: str, *, retry_after_seconds: int = 0) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 class OTPRequestLimitedError(OTPError):
-    pass
+    def __init__(self, message: str, *, retry_after_seconds: int = 0) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _now() -> datetime:
@@ -53,7 +58,12 @@ def _generate_otp(length: int = 6) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _normalize_phone_e164(phone: str) -> str:
+    return phone.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+
 def _get_or_create_user(db: Session, phone_e164: str) -> User:
+    phone_e164 = _normalize_phone_e164(phone_e164)
     user = db.query(User).filter(User.phone_e164 == phone_e164).first()
     if user:
         return user
@@ -73,6 +83,7 @@ def request_login_otp(
     phone_e164: str,
     background_tasks: BackgroundTasks | None = None,
 ) -> None:
+    phone_e164 = _normalize_phone_e164(phone_e164)
     user = _get_or_create_user(db, phone_e164)
     now = _now()
     window_start = now - timedelta(seconds=OTP_REQUEST_WINDOW_SECONDS)
@@ -83,7 +94,20 @@ def request_login_otp(
         .count()
     )
     if recent_requests >= OTP_REQUEST_MAX_PER_WINDOW:
-        raise OTPRequestLimitedError("Too many OTP requests. Try again later.")
+        oldest_recent = (
+            db.query(OTPCode)
+            .filter(OTPCode.user_id == user.id, OTPCode.created_at >= window_start)
+            .order_by(OTPCode.created_at.asc())
+            .first()
+        )
+        retry_after_seconds = OTP_REQUEST_WINDOW_SECONDS
+        if oldest_recent:
+            elapsed = (now - oldest_recent.created_at).total_seconds()
+            retry_after_seconds = max(1, math.ceil(OTP_REQUEST_WINDOW_SECONDS - elapsed))
+        raise OTPRequestLimitedError(
+            "Too many OTP requests. Try again later.",
+            retry_after_seconds=retry_after_seconds,
+        )
 
     db.query(OTPCode).filter(
         OTPCode.user_id == user.id,
@@ -111,6 +135,7 @@ def request_login_otp(
 
 
 def verify_login_otp(db: Session, phone_e164: str, code: str) -> tuple[str, str]:
+    phone_e164 = _normalize_phone_e164(phone_e164)
     user = db.query(User).filter(User.phone_e164 == phone_e164).first()
     if not user:
         raise OTPError("Invalid OTP")
@@ -126,7 +151,11 @@ def verify_login_otp(db: Session, phone_e164: str, code: str) -> tuple[str, str]
 
     now = _now()
     if otp_row.locked_until and otp_row.locked_until > now:
-        raise OTPLockedError("OTP temporarily locked. Try again later.")
+        retry_after_seconds = max(1, math.ceil((otp_row.locked_until - now).total_seconds()))
+        raise OTPLockedError(
+            "OTP temporarily locked. Try again later.",
+            retry_after_seconds=retry_after_seconds,
+        )
 
     if otp_row.expires_at <= now:
         raise OTPExpiredError("OTP expired")

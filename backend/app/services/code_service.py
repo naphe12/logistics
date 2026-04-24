@@ -31,7 +31,13 @@ def create_pickup_code(db: Session, shipment_id):
     return row, raw
 
 
-def validate_pickup_code(db: Session, shipment_id, raw_code: str) -> tuple[bool, str]:
+def validate_pickup_code(
+    db: Session,
+    shipment_id,
+    raw_code: str,
+    *,
+    consume: bool = False,
+) -> tuple[bool, str, str | None]:
     now = datetime.now(UTC)
     expected_hash = hash_code(raw_code)
 
@@ -51,9 +57,28 @@ def validate_pickup_code(db: Session, shipment_id, raw_code: str) -> tuple[bool,
 
     db.add(ShipmentCodeAttempt(shipment_id=shipment_id, success=success))
     if matched_code is not None:
-        db.delete(matched_code)
+        if consume:
+            db.delete(matched_code)
         db.flush()
-        return True, "Pickup code valid"
+        return True, "Pickup code valid", None
+
+    expired_match = (
+        db.query(ShipmentCode)
+        .filter(
+            ShipmentCode.shipment_id == shipment_id,
+            ShipmentCode.purpose == CodePurposeEnum.pickup,
+            ShipmentCode.code_hash == expected_hash,
+            ShipmentCode.expires_at < now,
+        )
+        .order_by(ShipmentCode.expires_at.desc())
+        .first()
+    )
 
     db.flush()
-    return False, "Invalid or expired pickup code"
+    if expired_match is not None:
+        return False, "Pickup code expired", "code_expired"
+
+    if active_codes:
+        return False, "Invalid pickup code", "code_invalid"
+
+    return False, "No active pickup code for this shipment", "code_missing"

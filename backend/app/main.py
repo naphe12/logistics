@@ -8,6 +8,7 @@ from app.api.shipments import router as shipments_router
 from app.api.ussd import router as ussd_router
 from app.api.codes import router as codes_router
 from app.api.payments import router as payments_router
+from app.api.relays import router as relays_router
 
 app = FastAPI(title="Logix API")
 
@@ -19,8 +20,17 @@ app.add_middleware(
     allow_origins=allow_origins,
     allow_origin_regex=allow_origin_regex,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Authorization",
+        "Content-Language",
+        "Content-Type",
+        "Origin",
+        "X-Requested-With",
+    ],
+    max_age=86400,
 )
 
 app.include_router(health_router)
@@ -29,3 +39,4 @@ app.include_router(shipments_router)
 app.include_router(ussd_router)
 app.include_router(codes_router)
 app.include_router(payments_router)
+app.include_router(relays_router)

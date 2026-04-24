@@ -35,6 +35,12 @@ async function parseError(res) {
   if (ct.includes('application/json')) {
     const data = await res.json()
     if (typeof data?.detail === 'string') return data.detail
+    if (data?.detail && typeof data.detail === 'object') {
+      const message = typeof data.detail.message === 'string' ? data.detail.message : 'Request failed'
+      const retry = data.detail.retry_after_seconds
+      if (typeof retry === 'number') return `${message} Retry in ${retry}s.`
+      return message
+    }
     return JSON.stringify(data)
   }
   return res.text()
@@ -135,6 +141,92 @@ export async function updateShipmentStatus(token, shipmentId, payload) {
   return request(`/shipments/${shipmentId}/status`, {
     method: 'PATCH',
     body: payload,
+    token,
+  })
+}
+
+export async function validatePickupCode(token, shipmentId, code) {
+  return request(`/codes/shipments/${shipmentId}/pickup/validate`, {
+    method: 'POST',
+    body: { code },
+    token,
+  })
+}
+
+export async function confirmPickupCode(token, shipmentId, payload) {
+  return request(`/codes/shipments/${shipmentId}/pickup/confirm`, {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function simulateUssd({ sessionId, serviceCode, phoneNumber, text }) {
+  const body = new URLSearchParams()
+  body.set('sessionId', sessionId)
+  body.set('serviceCode', serviceCode)
+  body.set('phoneNumber', phoneNumber)
+  body.set('text', text || '')
+
+  const res = await fetch(`${API_BASE_URL}/ussd`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  })
+
+  if (!res.ok) {
+    const message = await parseError(res)
+    throw new Error(message || `HTTP ${res.status}`)
+  }
+  return res.text()
+}
+
+export async function listUsers(token, role) {
+  const query = role ? `?role=${encodeURIComponent(role)}` : ''
+  return request(`/auth/users${query}`, { token })
+}
+
+export async function listRelays(token) {
+  return request('/relays', { token })
+}
+
+export async function createRelay(token, payload) {
+  return request('/relays', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function updateRelay(token, relayId, payload) {
+  return request(`/relays/${relayId}`, {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function deleteRelay(token, relayId) {
+  return request(`/relays/${relayId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export async function listRelayAgents(token, relayId) {
+  return request(`/relays/${relayId}/agents`, { token })
+}
+
+export async function assignAgentToRelay(token, relayId, userId) {
+  return request(`/relays/${relayId}/agents/${userId}`, {
+    method: 'PUT',
+    token,
+  })
+}
+
+export async function unassignAgentFromRelay(token, relayId, userId) {
+  return request(`/relays/${relayId}/agents/${userId}`, {
+    method: 'DELETE',
     token,
   })
 }

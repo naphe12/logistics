@@ -5,8 +5,10 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Sidebar from './components/Sidebar'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
+import RelaysPage from './pages/RelaysPage'
 import ShipmentsPage from './pages/ShipmentsPage'
 import TrackingPage from './pages/TrackingPage'
+import UssdSimulatorPage from './pages/UssdSimulatorPage'
 import './styles.css'
 
 export default function App() {
@@ -59,10 +61,26 @@ export default function App() {
             }
           />
           <Route
+            path="/relays"
+            element={
+              <ProtectedRoute>
+                <RelaysPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/tracking"
             element={
               <ProtectedRoute>
                 <TrackingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ussd-simulator"
+            element={
+              <ProtectedRoute>
+                <UssdSimulatorPage />
               </ProtectedRoute>
             }
           />

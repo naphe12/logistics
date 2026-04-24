@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.database import get_db
+from app.config import AUTH_ALLOW_DEV_LOGIN
 from app.dependencies import get_current_user, require_roles
 from app.enums import UserTypeEnum
 from app.models.users import User
@@ -32,6 +33,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    if not AUTH_ALLOW_DEV_LOGIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Direct login disabled. Use OTP flow.",
+        )
     token = login_or_create(db, payload.phone_e164)
     return TokenResponse(access_token=token)
 
@@ -45,7 +51,15 @@ def request_otp(
     try:
         request_login_otp(db=db, phone_e164=payload.phone_e164, background_tasks=background_tasks)
     except OTPRequestLimitedError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": str(exc),
+                "error_code": "otp_request_limited",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     return {"detail": "OTP sent"}
 
 
@@ -56,7 +70,15 @@ def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
     except OTPExpiredError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except OTPLockedError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": str(exc),
+                "error_code": "otp_locked",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except OTPError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
@@ -74,6 +96,18 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/users", response_model=list[UserOut])
+def list_users(
+    role: UserTypeEnum | None = None,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_roles(UserTypeEnum.admin)),
+):
+    query = db.query(User)
+    if role is not None:
+        query = query.filter(User.user_type == role)
+    return query.order_by(User.created_at.desc()).all()
 
 
 @router.patch("/users/{user_id}/role", response_model=UserOut)

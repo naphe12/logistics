@@ -4,7 +4,9 @@ import { useAuth } from '../auth/AuthContext'
 const items = [
   { to: '/dashboard', label: 'Accueil' },
   { to: '/shipments', label: 'Creer colis' },
+  { to: '/relays', label: 'Relais' },
   { to: '/tracking', label: 'Operations' },
+  { to: '/ussd-simulator', label: 'USSD' },
 ]
 
 export default function Sidebar() {

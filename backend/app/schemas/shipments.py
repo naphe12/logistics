@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
+from datetime import date, datetime
 
 
 class ShipmentCreate(BaseModel):
@@ -17,6 +18,37 @@ class ShipmentStatusUpdate(BaseModel):
     event_type: str
 
 
+class ShipmentEventCreate(BaseModel):
+    event_type: str = Field(min_length=2, max_length=60)
+    relay_id: UUID | None = None
+    status: str | None = Field(default=None, min_length=2, max_length=40)
+
+
+class ShipmentBulkStatusItem(BaseModel):
+    shipment_id: UUID
+    status: str = Field(min_length=2, max_length=40)
+    event_type: str = Field(min_length=2, max_length=60)
+    relay_id: UUID | None = None
+
+
+class ShipmentBulkStatusUpdateRequest(BaseModel):
+    items: list[ShipmentBulkStatusItem] = Field(min_length=1, max_length=200)
+    continue_on_error: bool = True
+
+
+class ShipmentBulkStatusResultItem(BaseModel):
+    shipment_id: UUID
+    success: bool
+    error: str | None = None
+
+
+class ShipmentBulkStatusUpdateResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: list[ShipmentBulkStatusResultItem]
+
+
 class ShipmentOut(BaseModel):
     id: UUID
     shipment_no: str
@@ -24,6 +56,51 @@ class ShipmentOut(BaseModel):
     receiver_name: str | None = None
     receiver_phone: str | None = None
     status: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ShipmentEventOut(BaseModel):
+    id: UUID
+    shipment_id: UUID
+    relay_id: UUID | None = None
+    event_type: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ShipmentOverviewStats(BaseModel):
+    total: int
+    created_last_24h: int
+    created_last_7d: int
+    by_status: dict[str, int]
+
+
+class ShipmentTimeseriesPoint(BaseModel):
+    day: date
+    created_count: int
+
+
+class ShipmentTimeseriesStats(BaseModel):
+    days: int
+    total_created: int
+    points: list[ShipmentTimeseriesPoint]
+
+
+class ShipmentListPage(BaseModel):
+    items: list[ShipmentOut]
+    total: int
+    offset: int
+    limit: int
+
+
+class ShipmentStatusOut(BaseModel):
+    code: str
+    label: str | None = None
 
     class Config:
         from_attributes = True

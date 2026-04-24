@@ -32,6 +32,7 @@ OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
 OTP_LOCK_MINUTES = int(os.getenv("OTP_LOCK_MINUTES", "15"))
 OTP_REQUEST_WINDOW_SECONDS = int(os.getenv("OTP_REQUEST_WINDOW_SECONDS", "300"))
 OTP_REQUEST_MAX_PER_WINDOW = int(os.getenv("OTP_REQUEST_MAX_PER_WINDOW", "3"))
+AUTH_ALLOW_DEV_LOGIN = parse_bool_env("AUTH_ALLOW_DEV_LOGIN", default=False)
 USSD_CREATE_WINDOW_SECONDS = int(os.getenv("USSD_CREATE_WINDOW_SECONDS", "3600"))
 USSD_CREATE_MAX_PER_WINDOW = int(os.getenv("USSD_CREATE_MAX_PER_WINDOW", "5"))
 
@@ -51,5 +52,5 @@ CORS_ALLOW_ORIGINS = parse_csv_env(
 CORS_ALLOW_ALL = parse_bool_env("CORS_ALLOW_ALL", default=False)
 CORS_ALLOW_ORIGIN_REGEX = os.getenv(
     "CORS_ALLOW_ORIGIN_REGEX",
-    r"^https://([a-zA-Z0-9-]+\.)*up\.railway\.app(:\d+)?$",
+    r"^https?://.+$",
 )
