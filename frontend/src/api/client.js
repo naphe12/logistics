@@ -156,6 +156,10 @@ export async function updateShipmentStatus(token, shipmentId, payload) {
   })
 }
 
+export async function getShipmentEta(token, shipmentId) {
+  return request(`/shipments/${shipmentId}/eta`, { token })
+}
+
 export async function validatePickupCode(token, shipmentId, code) {
   return request(`/codes/shipments/${shipmentId}/pickup/validate`, {
     method: 'POST',
@@ -317,6 +321,40 @@ export async function scanTripArrival(token, tripId, payload = {}) {
 export async function completeTrip(token, tripId) {
   return request(`/transport/trips/${tripId}/complete`, {
     method: 'POST',
+    token,
+  })
+}
+
+export async function getTransportGroupingSuggestions(token, { maxGroupSize = 10, limit = 300 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('max_group_size', String(maxGroupSize))
+  qs.set('limit', String(limit))
+  return request(`/transport/optimizer/grouping?${qs.toString()}`, { token })
+}
+
+export async function getTransportPrioritySuggestions(token, { maxResults = 50, limit = 500 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('max_results', String(maxResults))
+  qs.set('limit', String(limit))
+  return request(`/transport/optimizer/priority?${qs.toString()}`, { token })
+}
+
+export async function autoAssignPriorityToTrip(
+  token,
+  tripId,
+  { targetManifestSize = 20, maxAdd = 10, candidateLimit = 500, vehicleCapacity = null } = {},
+) {
+  const body = {
+    target_manifest_size: targetManifestSize,
+    max_add: maxAdd,
+    candidate_limit: candidateLimit,
+  }
+  if (vehicleCapacity !== null && vehicleCapacity !== undefined && vehicleCapacity > 0) {
+    body.vehicle_capacity = vehicleCapacity
+  }
+  return request(`/transport/trips/${tripId}/manifest/auto-assign-priority`, {
+    method: 'POST',
+    body,
     token,
   })
 }

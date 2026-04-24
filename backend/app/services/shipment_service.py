@@ -1,10 +1,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from statistics import median
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc, func, or_
-from app.models.shipments import Shipment, ShipmentEvent
+from app.models.shipments import RelayInventory, Shipment, ShipmentEvent
 from app.models.statuses import ShipmentStatus
+from app.models.relays import RelayPoint
+from app.models.incidents import Incident
 from app.schemas.shipments import ShipmentBulkStatusItem, ShipmentCreate, ShipmentStatusUpdate
 from app.services.code_service import create_pickup_code
 from app.services.notification_service import queue_and_send_sms
@@ -15,6 +18,29 @@ from app.models.users import User
 
 class ShipmentNotFoundError(Exception):
     pass
+
+
+ETA_BASE_HOURS_BY_STATUS: dict[str, int] = {
+    "created": 72,
+    "ready_for_pickup": 12,
+    "picked_up": 48,
+    "in_transit": 24,
+    "arrived_at_relay": 8,
+    "delivered": 0,
+}
+
+ETA_MIN_CORRIDOR_SAMPLES = 5
+ETA_CORRIDOR_LOOKBACK_LIMIT = 200
+ETA_INCIDENT_PENALTY_BASE_HOURS = 8
+ETA_INCIDENT_PENALTY_EXTRA_HOURS = 4
+ETA_MAX_INCIDENT_PENALTY_HOURS = 24
+ETA_STAGNATION_THRESHOLDS_HOURS: dict[str, int] = {
+    "created": 12,
+    "ready_for_pickup": 6,
+    "picked_up": 12,
+    "in_transit": 18,
+    "arrived_at_relay": 10,
+}
 
 
 def _apply_visibility_scope(query, current_user: User):
@@ -326,6 +352,20 @@ def list_my_shipments(
     return items, total
 
 
+def list_shipments_delta(
+    db: Session,
+    current_user: User,
+    *,
+    since: datetime | None = None,
+    limit: int = 200,
+) -> list[Shipment]:
+    limit = max(1, min(limit, 1000))
+    query = _apply_visibility_scope(db.query(Shipment), current_user)
+    if since is not None:
+        query = query.filter(Shipment.updated_at > since)
+    return query.order_by(Shipment.updated_at.asc(), Shipment.id.asc()).limit(limit).all()
+
+
 def list_shipment_statuses(db: Session) -> list[ShipmentStatus]:
     return db.query(ShipmentStatus).order_by(ShipmentStatus.code.asc()).all()
 
@@ -406,3 +446,238 @@ def bulk_update_shipment_status(
         "failed": failed,
         "results": results,
     }
+
+
+def _get_eta_floor_for_status(status: str) -> int:
+    floor_by_status = {
+        "created": 8,
+        "ready_for_pickup": 2,
+        "picked_up": 6,
+        "in_transit": 3,
+        "arrived_at_relay": 1,
+    }
+    return floor_by_status.get(status, 4)
+
+
+def _build_baseline_eta(db: Session, shipment: Shipment, now: datetime) -> dict:
+    status = shipment.status or "created"
+    base_hours = ETA_BASE_HOURS_BY_STATUS.get(status, 48)
+    last_event_at = (
+        db.query(func.max(ShipmentEvent.created_at))
+        .filter(ShipmentEvent.shipment_id == shipment.id)
+        .scalar()
+    )
+    reference_at = last_event_at or shipment.created_at or now
+    elapsed_hours = max(0.0, (now - reference_at).total_seconds() / 3600.0)
+    remaining = max(_get_eta_floor_for_status(status), int(round(base_hours - elapsed_hours)))
+    estimated_at = now + timedelta(hours=remaining)
+
+    if status in {"in_transit", "arrived_at_relay"}:
+        confidence = "medium"
+    elif status in {"ready_for_pickup"}:
+        confidence = "high"
+    else:
+        confidence = "low"
+
+    return {
+        "shipment_id": shipment.id,
+        "shipment_no": shipment.shipment_no,
+        "status": status,
+        "estimated_delivery_at": estimated_at,
+        "remaining_hours": remaining,
+        "confidence": confidence,
+        "basis": "status_baseline_v1",
+        "historical_samples": None,
+        "historical_median_hours": None,
+    }
+
+
+def _get_corridor_median_hours(db: Session, shipment: Shipment) -> tuple[int | None, int]:
+    if not shipment.origin or not shipment.destination:
+        return None, 0
+
+    rows = (
+        db.query(
+            Shipment.created_at.label("created_at"),
+            func.max(ShipmentEvent.created_at).label("delivered_at"),
+        )
+        .outerjoin(ShipmentEvent, ShipmentEvent.shipment_id == Shipment.id)
+        .filter(Shipment.status == "delivered")
+        .filter(Shipment.origin == shipment.origin)
+        .filter(Shipment.destination == shipment.destination)
+        .filter(Shipment.id != shipment.id)
+        .group_by(Shipment.id)
+        .order_by(desc(Shipment.created_at))
+        .limit(ETA_CORRIDOR_LOOKBACK_LIMIT)
+        .all()
+    )
+
+    durations_hours: list[float] = []
+    for row in rows:
+        created_at = getattr(row, "created_at", None)
+        delivered_at = getattr(row, "delivered_at", None)
+        if not created_at or not delivered_at:
+            continue
+        hours = (delivered_at - created_at).total_seconds() / 3600.0
+        if hours > 0:
+            durations_hours.append(hours)
+
+    if not durations_hours:
+        return None, 0
+
+    return int(round(median(durations_hours))), len(durations_hours)
+
+
+def _get_destination_utilization_ratio(db: Session, shipment: Shipment) -> float | None:
+    if not shipment.destination:
+        return None
+
+    relay = db.query(RelayPoint).filter(RelayPoint.id == shipment.destination).first()
+    if not relay or relay.storage_capacity is None or relay.storage_capacity <= 0:
+        return None
+
+    present_count = (
+        db.query(RelayInventory)
+        .filter(
+            RelayInventory.relay_id == shipment.destination,
+            RelayInventory.present.is_(True),
+        )
+        .count()
+    )
+    return present_count / relay.storage_capacity
+
+
+def _compute_eta_penalties(
+    db: Session,
+    shipment: Shipment,
+    *,
+    status: str,
+    now: datetime,
+) -> tuple[int, list[dict[str, int | str]]]:
+    factors: list[dict[str, int | str]] = []
+
+    open_incidents_count = (
+        db.query(Incident)
+        .filter(
+            Incident.shipment_id == shipment.id,
+            Incident.status.in_(["open", "investigating"]),
+        )
+        .count()
+    )
+    if open_incidents_count > 0:
+        incident_penalty = min(
+            ETA_MAX_INCIDENT_PENALTY_HOURS,
+            ETA_INCIDENT_PENALTY_BASE_HOURS
+            + (open_incidents_count - 1) * ETA_INCIDENT_PENALTY_EXTRA_HOURS,
+        )
+        factors.append(
+            {
+                "code": "incident_risk",
+                "label": "Incident actif",
+                "hours": incident_penalty,
+            }
+        )
+
+    utilization_ratio = _get_destination_utilization_ratio(db, shipment)
+    if utilization_ratio is not None:
+        if utilization_ratio >= 1.0:
+            factors.append(
+                {
+                    "code": "relay_full",
+                    "label": "Relais destination plein",
+                    "hours": 12,
+                }
+            )
+        elif utilization_ratio >= 0.9:
+            factors.append(
+                {
+                    "code": "relay_near_capacity",
+                    "label": "Relais destination proche saturation",
+                    "hours": 6,
+                }
+            )
+
+    threshold_hours = ETA_STAGNATION_THRESHOLDS_HOURS.get(status)
+    if threshold_hours:
+        last_event_at = (
+            db.query(func.max(ShipmentEvent.created_at))
+            .filter(ShipmentEvent.shipment_id == shipment.id)
+            .scalar()
+        )
+        reference_at = last_event_at or shipment.created_at or now
+        stuck_hours = max(0.0, (now - reference_at).total_seconds() / 3600.0)
+        if stuck_hours > threshold_hours:
+            excess = stuck_hours - threshold_hours
+            blocks = max(1, int(excess // 6))
+            stagnation_penalty = min(18, blocks * 3)
+            factors.append(
+                {
+                    "code": "operational_delay",
+                    "label": "Blocage operationnel",
+                    "hours": stagnation_penalty,
+                }
+            )
+
+    total_penalty = int(sum(int(factor["hours"]) for factor in factors))
+    return total_penalty, factors
+
+
+def get_shipment_eta(db: Session, shipment_id, current_user: User) -> dict:
+    shipment = get_shipment(db, shipment_id, current_user)
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    now = datetime.now(UTC)
+    status = shipment.status or "created"
+    if status == "delivered":
+        return {
+            "shipment_id": shipment.id,
+            "shipment_no": shipment.shipment_no,
+            "status": status,
+            "estimated_delivery_at": now,
+            "remaining_hours": 0,
+            "base_remaining_hours": 0,
+            "penalty_hours": 0,
+            "confidence": "high",
+            "basis": "already_delivered",
+            "factors": [],
+            "historical_samples": None,
+            "historical_median_hours": None,
+        }
+
+    median_hours, sample_count = _get_corridor_median_hours(db, shipment)
+    if median_hours is None or sample_count < ETA_MIN_CORRIDOR_SAMPLES:
+        eta = _build_baseline_eta(db, shipment, now)
+    else:
+        start_at = shipment.created_at or now
+        elapsed_hours = max(0.0, (now - start_at).total_seconds() / 3600.0)
+        floor = _get_eta_floor_for_status(status)
+        remaining = max(floor, int(round(median_hours - elapsed_hours)))
+        estimated_at = now + timedelta(hours=remaining)
+
+        confidence = "high" if sample_count >= 20 else "medium"
+        eta = {
+            "shipment_id": shipment.id,
+            "shipment_no": shipment.shipment_no,
+            "status": status,
+            "estimated_delivery_at": estimated_at,
+            "remaining_hours": remaining,
+            "base_remaining_hours": remaining,
+            "penalty_hours": 0,
+            "confidence": confidence,
+            "basis": "corridor_history_v2",
+            "factors": [],
+            "historical_samples": sample_count,
+            "historical_median_hours": median_hours,
+        }
+
+    penalty_hours, factors = _compute_eta_penalties(db, shipment, status=status, now=now)
+    base_remaining = int(eta["remaining_hours"])
+    final_remaining = base_remaining + penalty_hours
+    eta["base_remaining_hours"] = base_remaining
+    eta["penalty_hours"] = penalty_hours
+    eta["remaining_hours"] = final_remaining
+    eta["estimated_delivery_at"] = now + timedelta(hours=final_remaining)
+    eta["factors"] = factors
+    eta["basis"] = f"{eta['basis']}+dynamic_risk_v3"
+    return eta

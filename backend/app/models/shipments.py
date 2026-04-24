@@ -20,6 +20,11 @@ class Shipment(Base):
     destination: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.shipment_statuses.code"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
     events = relationship("ShipmentEvent", back_populates="shipment", cascade="all, delete-orphan")
     packages = relationship("ShipmentPackage", back_populates="shipment", cascade="all, delete-orphan")

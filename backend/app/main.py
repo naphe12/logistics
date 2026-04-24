@@ -12,6 +12,7 @@ from app.api.relays import router as relays_router
 from app.api.transport import router as transport_router
 from app.api.incidents import router as incidents_router
 from app.api.backoffice import router as backoffice_router
+from app.api.sync import router as sync_router
 from app.api.ws import router as ws_router
 from app.middleware.security import RateLimitMiddleware, RequestAuditMiddleware
 from app.services.sms_worker_service import start_sms_queue_worker, stop_sms_queue_worker
@@ -51,6 +52,7 @@ app.include_router(relays_router)
 app.include_router(transport_router)
 app.include_router(incidents_router)
 app.include_router(backoffice_router)
+app.include_router(sync_router)
 app.include_router(ws_router)
 
 

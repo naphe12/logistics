@@ -42,6 +42,7 @@ def main() -> int:
     parser.add_argument("--skip-backend-compile", action="store_true", help="Skip backend compile check")
     parser.add_argument("--skip-frontend-build", action="store_true", help="Skip frontend production build")
     parser.add_argument("--skip-smoke", action="store_true", help="Skip smoke API call")
+    parser.add_argument("--run-api-tests", action="store_true", help="Run pytest API tests (requires pytest + env vars)")
     args = parser.parse_args()
 
     try:
@@ -60,6 +61,13 @@ def main() -> int:
 
         if not args.skip_frontend_build:
             _run([_npm_executable(), "run", "build"], cwd=FRONTEND_DIR, label="Frontend Build")
+
+        if args.run_api_tests:
+            _run(
+                [str(venv_python), "-m", "pytest"],
+                cwd=BACKEND_DIR,
+                label="Pytest API",
+            )
 
         should_run_smoke = (not args.skip_smoke) and bool(args.base_url) and bool(args.token)
         if should_run_smoke:

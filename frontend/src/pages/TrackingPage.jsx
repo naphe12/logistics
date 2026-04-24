@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   checkHealth,
   confirmPickupCode,
+  getShipmentEta,
   openShipmentTrackingSocket,
   updateShipmentStatus,
   validatePickupCode,
@@ -25,6 +26,8 @@ export default function TrackingPage() {
   const [result, setResult] = useState('')
   const [pickupValidation, setPickupValidation] = useState('')
   const [pickupConfirmation, setPickupConfirmation] = useState('')
+  const [eta, setEta] = useState(null)
+  const [etaShipmentId, setEtaShipmentId] = useState('')
   const [socketState, setSocketState] = useState('idle')
   const [liveShipmentId, setLiveShipmentId] = useState('')
   const [socketInput, setSocketInput] = useState('')
@@ -152,6 +155,18 @@ export default function TrackingPage() {
     setLiveShipmentId('')
     setLiveEvents([])
     setSocketState('idle')
+  }
+
+  async function onFetchEta(e) {
+    e.preventDefault()
+    setError('')
+    setEta(null)
+    try {
+      const data = await getShipmentEta(token, etaShipmentId.trim())
+      setEta(data)
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   return (
@@ -307,6 +322,56 @@ export default function TrackingPage() {
             ))
           )}
         </div>
+      </article>
+
+      <article className="panel">
+        <p className="eyebrow">ETA</p>
+        <h2>Estimation delai livraison</h2>
+        <form className="form" onSubmit={onFetchEta}>
+          <label>
+            Shipment ID
+            <input
+              placeholder="UUID"
+              value={etaShipmentId}
+              onChange={(e) => setEtaShipmentId(e.target.value)}
+              required
+            />
+          </label>
+          <button type="submit" disabled={!token}>
+            Calculer ETA
+          </button>
+        </form>
+        {eta ? (
+          <div className="relay-item">
+            <p>
+              <strong>{eta.shipment_no || eta.shipment_id}</strong>
+            </p>
+            <p>
+              status: {eta.status} | ETA: {eta.remaining_hours}h | confidence: {eta.confidence}
+            </p>
+            <p>
+              base: {eta.base_remaining_hours ?? eta.remaining_hours}h | penalties: {eta.penalty_hours || 0}h
+            </p>
+            <p>estimated_delivery_at: {eta.estimated_delivery_at}</p>
+            <p>model: {eta.basis}</p>
+            {eta.historical_samples ? (
+              <p>
+                history: {eta.historical_samples} shipments | median: {eta.historical_median_hours}h
+              </p>
+            ) : null}
+            {Array.isArray(eta.factors) && eta.factors.length > 0 ? (
+              <div>
+                {eta.factors.map((factor) => (
+                  <p key={factor.code}>
+                    risk: {factor.label} (+{factor.hours}h)
+                  </p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p>Aucune estimation calculee.</p>
+        )}
       </article>
 
       {error ? <p className="error">{error}</p> : null}

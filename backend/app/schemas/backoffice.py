@@ -22,6 +22,10 @@ class BackofficeOverview(BaseModel):
     notifications_dead: int
     ussd_requests_24h: int
     trips_in_progress: int
+    auto_assign_accepted_24h: int
+    auto_assign_rejected_24h: int
+    auto_assign_total_24h: int
+    auto_assign_acceptance_rate_24h: int
     shipment_status_breakdown: list[MetricItem]
 
 

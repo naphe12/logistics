@@ -14,6 +14,7 @@ from app.schemas.shipments import (
     ShipmentListPage,
     ShipmentOut,
     ShipmentStatusOut,
+    ShipmentEtaOut,
     ShipmentOverviewStats,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
@@ -30,6 +31,7 @@ from app.services.shipment_service import (
     list_shipments,
     list_shipment_statuses,
     shipment_status_exists,
+    get_shipment_eta,
     update_shipment_status,
     ShipmentNotFoundError,
 )
@@ -243,6 +245,27 @@ def get_shipment_endpoint(
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
     return shipment
+
+
+@router.get("/{shipment_id}/eta", response_model=ShipmentEtaOut)
+def get_shipment_eta_endpoint(
+    shipment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return get_shipment_eta(db, shipment_id, current_user)
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{shipment_id}/events", response_model=list[ShipmentEventOut])

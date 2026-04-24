@@ -147,6 +147,22 @@ export default function BackofficePage() {
           <p>SMS dead</p>
           <h3>{overview?.notifications_dead ?? '-'}</h3>
         </article>
+        <article className="kpi-card">
+          <p>Auto-assign acceptes 24h</p>
+          <h3>{overview?.auto_assign_accepted_24h ?? '-'}</h3>
+        </article>
+        <article className="kpi-card">
+          <p>Auto-assign rejetes 24h</p>
+          <h3>{overview?.auto_assign_rejected_24h ?? '-'}</h3>
+        </article>
+        <article className="kpi-card">
+          <p>Auto-assign total 24h</p>
+          <h3>{overview?.auto_assign_total_24h ?? '-'}</h3>
+        </article>
+        <article className="kpi-card">
+          <p>Taux acceptation 24h</p>
+          <h3>{overview?.auto_assign_acceptance_rate_24h ?? '-'}%</h3>
+        </article>
       </section>
 
       <article className="panel">

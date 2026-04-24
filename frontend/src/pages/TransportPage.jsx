@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   addShipmentToManifest,
+  autoAssignPriorityToTrip,
   completeTrip,
   createTrip,
+  getTransportGroupingSuggestions,
+  getTransportPrioritySuggestions,
   getTripManifest,
   listTrips,
   removeShipmentFromManifest,
@@ -18,6 +21,13 @@ const defaultTripForm = {
   status: 'planned',
 }
 
+const defaultAutoAssignForm = {
+  targetManifestSize: 20,
+  maxAdd: 10,
+  candidateLimit: 500,
+  vehicleCapacity: '',
+}
+
 export default function TransportPage() {
   const { token } = useAuth()
   const [error, setError] = useState('')
@@ -29,6 +39,10 @@ export default function TransportPage() {
   const [editingTripId, setEditingTripId] = useState('')
   const [shipmentIdInput, setShipmentIdInput] = useState('')
   const [scanRelayId, setScanRelayId] = useState('')
+  const [grouping, setGrouping] = useState(null)
+  const [priorityQueue, setPriorityQueue] = useState(null)
+  const [autoAssignForm, setAutoAssignForm] = useState(defaultAutoAssignForm)
+  const [autoAssignResult, setAutoAssignResult] = useState(null)
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => trip.id === selectedTripId) || null,
@@ -48,8 +62,22 @@ export default function TransportPage() {
     setManifestView(data)
   }
 
+  async function loadGrouping() {
+    if (!token) return
+    const data = await getTransportGroupingSuggestions(token, { maxGroupSize: 8, limit: 200 })
+    setGrouping(data)
+  }
+
+  async function loadPriorityQueue() {
+    if (!token) return
+    const data = await getTransportPrioritySuggestions(token, { maxResults: 30, limit: 500 })
+    setPriorityQueue(data)
+  }
+
   useEffect(() => {
     loadTrips().catch((err) => setError(err.message))
+    loadGrouping().catch((err) => setError(err.message))
+    loadPriorityQueue().catch((err) => setError(err.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
@@ -106,6 +134,8 @@ export default function TransportPage() {
       setShipmentIdInput('')
       setMessage('Colis ajoute au manifest')
       await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
     } catch (err) {
       setError(err.message)
     }
@@ -119,6 +149,8 @@ export default function TransportPage() {
       await removeShipmentFromManifest(token, selectedTripId, shipmentId)
       setMessage('Colis retire du manifest')
       await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
     } catch (err) {
       setError(err.message)
     }
@@ -148,6 +180,51 @@ export default function TransportPage() {
       setMessage('Trip complete')
       await loadTrips()
       await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onApplySuggestion(suggestion) {
+    setError('')
+    setMessage('')
+    if (!selectedTripId) return
+    try {
+      let added = 0
+      for (const item of suggestion.shipments || []) {
+        try {
+          await addShipmentToManifest(token, selectedTripId, item.shipment_id)
+          added += 1
+        } catch {
+          // Skip duplicates or invalid items and continue with the batch.
+        }
+      }
+      setMessage(`Lot applique au trip: ${added} colis ajoutes`)
+      await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onAutoAssignPriority(e) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+    setAutoAssignResult(null)
+    if (!selectedTripId) return
+    try {
+      const res = await autoAssignPriorityToTrip(token, selectedTripId, autoAssignForm)
+      setAutoAssignResult(res)
+      setMessage(
+        `Auto-assign: ${res.added_count} ajoutes, ${res.rejected_count} rejetes (manifest ${res.before_count} -> ${res.after_count})`,
+      )
+      await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
     } catch (err) {
       setError(err.message)
     }
@@ -293,6 +370,142 @@ export default function TransportPage() {
           </div>
         </article>
       </section>
+
+      <article className="panel">
+        <p className="eyebrow">Optimizer</p>
+        <h3>Propositions de regroupement colis</h3>
+        <p>
+          Candidats: <strong>{grouping?.total_candidates ?? '-'}</strong> | Groupes:{' '}
+          <strong>{grouping?.total_groups ?? '-'}</strong> | Taille lot: <strong>{grouping?.max_group_size ?? '-'}</strong>
+        </p>
+        <div className="relay-list">
+          {!grouping || grouping.suggestions.length === 0 ? <p>Aucun regroupement propose</p> : null}
+          {grouping?.suggestions?.slice(0, 20).map((suggestion) => (
+            <div key={suggestion.key} className="relay-item">
+              <p>
+                <strong>{suggestion.key}</strong> | count: {suggestion.candidate_count}
+              </p>
+              <p>
+                origin: {suggestion.origin || '-'} | destination: {suggestion.destination || '-'}
+              </p>
+              <p>
+                colis: {(suggestion.shipments || []).map((x) => x.shipment_no || x.shipment_id).join(', ')}
+              </p>
+              <button type="button" disabled={!selectedTripId} onClick={() => onApplySuggestion(suggestion)}>
+                Appliquer au trip selectionne
+              </button>
+            </div>
+          ))}
+        </div>
+      </article>
+
+      <article className="panel">
+        <p className="eyebrow">Priority Queue</p>
+        <h3>Colis a traiter en priorite</h3>
+        <p>
+          Candidats: <strong>{priorityQueue?.total_candidates ?? '-'}</strong> | Top:{' '}
+          <strong>{priorityQueue?.max_results ?? '-'}</strong>
+        </p>
+        <div className="relay-list">
+          {!priorityQueue || priorityQueue.suggestions.length === 0 ? <p>Aucune priorite calculee</p> : null}
+          {priorityQueue?.suggestions?.slice(0, 15).map((item) => (
+            <div key={item.shipment_id} className="relay-item">
+              <p>
+                <strong>{item.shipment_no || item.shipment_id}</strong> | score: {item.priority_score}
+              </p>
+              <p>
+                status: {item.status || '-'} | origin: {item.origin || '-'} | destination:{' '}
+                {item.destination || '-'}
+              </p>
+              <p>reasons: {(item.reasons || []).join(' | ') || '-'}</p>
+              <button
+                type="button"
+                disabled={!selectedTripId}
+                onClick={async () => {
+                  try {
+                    setError('')
+                    setMessage('')
+                    await addShipmentToManifest(token, selectedTripId, item.shipment_id)
+                    setMessage('Colis prioritaire ajoute au manifest')
+                    await loadManifest(selectedTripId)
+                    await loadGrouping()
+                    await loadPriorityQueue()
+                  } catch (err) {
+                    setError(err.message)
+                  }
+                }}
+              >
+                Ajouter au trip selectionne
+              </button>
+            </div>
+          ))}
+        </div>
+        <form className="form" onSubmit={onAutoAssignPriority}>
+          <label>
+            Taille cible manifest
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={autoAssignForm.targetManifestSize}
+              onChange={(e) =>
+                setAutoAssignForm((s) => ({ ...s, targetManifestSize: Number(e.target.value || 0) }))
+              }
+              required
+            />
+          </label>
+          <label>
+            Max a ajouter
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={autoAssignForm.maxAdd}
+              onChange={(e) => setAutoAssignForm((s) => ({ ...s, maxAdd: Number(e.target.value || 0) }))}
+              required
+            />
+          </label>
+          <label>
+            Volume candidats
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={autoAssignForm.candidateLimit}
+              onChange={(e) =>
+                setAutoAssignForm((s) => ({ ...s, candidateLimit: Number(e.target.value || 0) }))
+              }
+              required
+            />
+          </label>
+          <label>
+            Capacite vehicule (optionnel)
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={autoAssignForm.vehicleCapacity}
+              onChange={(e) => setAutoAssignForm((s) => ({ ...s, vehicleCapacity: e.target.value }))}
+              placeholder="ex: 40"
+            />
+          </label>
+          <button type="submit" disabled={!selectedTripId}>
+            Auto-affecter top priorites
+          </button>
+        </form>
+        {autoAssignResult?.rejected_count > 0 ? (
+          <div className="relay-list">
+            {autoAssignResult.rejected.slice(0, 8).map((item) => (
+              <div key={`rej-${item.shipment_id}`} className="relay-item">
+                <p>
+                  <strong>{item.shipment_no || item.shipment_id}</strong> | score: {item.priority_score}
+                </p>
+                <p>rejete: {(item.reasons || []).join(', ')}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </article>
 
       {message ? <p className="status-line">{message}</p> : null}
       {error ? <p className="error">{error}</p> : null}

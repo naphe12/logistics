@@ -104,3 +104,23 @@ class ShipmentStatusOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ShipmentEtaOut(BaseModel):
+    class ShipmentEtaFactor(BaseModel):
+        code: str
+        label: str
+        hours: int
+
+    shipment_id: UUID
+    shipment_no: str | None = None
+    status: str | None = None
+    estimated_delivery_at: datetime
+    remaining_hours: int
+    base_remaining_hours: int | None = None
+    penalty_hours: int = 0
+    confidence: str
+    basis: str
+    factors: list[ShipmentEtaFactor] = Field(default_factory=list)
+    historical_samples: int | None = None
+    historical_median_hours: int | None = None

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_roles
 from app.enums import UserTypeEnum
+from app.models.users import User
 from app.schemas.incidents import (
     ClaimCreate,
     ClaimOut,
@@ -127,10 +128,18 @@ def update_incident_status_endpoint(
     incident_id: UUID,
     payload: IncidentUpdateStatusRequest,
     db: Session = Depends(get_db),
-    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.agent, UserTypeEnum.hub)),
+    current_user: User = Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.agent, UserTypeEnum.hub)),
 ):
     try:
-        return update_incident_status(db, incident_id, payload.status)
+        updated = update_incident_status(db, incident_id, payload.status)
+        if payload.status == "resolved":
+            actor = current_user.phone_e164 or str(current_user.id)
+            add_incident_update(
+                db,
+                incident_id,
+                f"Resolved by {actor}.",
+            )
+        return updated
     except IncidentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except IncidentValidationError as exc:
@@ -160,4 +169,3 @@ def add_incident_update_endpoint(
         return add_incident_update(db, incident_id, payload.message)
     except IncidentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-

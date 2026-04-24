@@ -60,6 +60,7 @@ def main() -> int:
     parser.add_argument("--skip-backend-compile", action="store_true", help="Forwarded to release_check")
     parser.add_argument("--skip-frontend-build", action="store_true", help="Forwarded to release_check")
     parser.add_argument("--skip-smoke", action="store_true", help="Forwarded to release_check")
+    parser.add_argument("--run-api-tests", action="store_true", help="Forwarded to release_check")
     parser.add_argument(
         "--json-out",
         default=str(BACKEND_DIR / "scripts" / "last_prod_gate_report.json"),
@@ -111,6 +112,8 @@ def main() -> int:
         release_cmd.append("--skip-frontend-build")
     if args.skip_smoke:
         release_cmd.append("--skip-smoke")
+    if args.run_api_tests:
+        release_cmd.append("--run-api-tests")
 
     steps.append(_run_step("Release Check", release_cmd, cwd=ROOT_DIR))
 
@@ -131,4 +134,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

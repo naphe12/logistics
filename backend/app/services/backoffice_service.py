@@ -56,6 +56,30 @@ def get_backoffice_overview(db: Session) -> dict:
     notifications_dead = db.query(Notification).filter(Notification.delivery_status == "dead").count()
     ussd_requests_24h = db.query(UssdLog).filter(UssdLog.created_at >= since_24h).count()
     trips_in_progress = db.query(Trip).filter(Trip.status == "in_progress").count()
+    auto_assign_accepted_24h = (
+        db.query(func.coalesce(func.sum(AuditLog.status_code), 0))
+        .filter(
+            AuditLog.entity == "manifest_shipments",
+            AuditLog.action == "auto_assign_accept",
+            AuditLog.created_at >= since_24h,
+        )
+        .scalar()
+    ) or 0
+    auto_assign_rejected_24h = (
+        db.query(func.coalesce(func.sum(AuditLog.status_code), 0))
+        .filter(
+            AuditLog.entity == "manifest_shipments",
+            AuditLog.action == "auto_assign_reject",
+            AuditLog.created_at >= since_24h,
+        )
+        .scalar()
+    ) or 0
+    auto_assign_total_24h = auto_assign_accepted_24h + auto_assign_rejected_24h
+    auto_assign_acceptance_rate_24h = (
+        int(round((auto_assign_accepted_24h * 100) / auto_assign_total_24h))
+        if auto_assign_total_24h > 0
+        else 0
+    )
 
     status_rows = (
         db.query(func.coalesce(Shipment.status, "unknown"), func.count(Shipment.id))
@@ -79,6 +103,10 @@ def get_backoffice_overview(db: Session) -> dict:
         "notifications_dead": notifications_dead,
         "ussd_requests_24h": ussd_requests_24h,
         "trips_in_progress": trips_in_progress,
+        "auto_assign_accepted_24h": int(auto_assign_accepted_24h),
+        "auto_assign_rejected_24h": int(auto_assign_rejected_24h),
+        "auto_assign_total_24h": int(auto_assign_total_24h),
+        "auto_assign_acceptance_rate_24h": int(auto_assign_acceptance_rate_24h),
         "shipment_status_breakdown": shipment_status_breakdown,
     }
 
