@@ -1,5 +1,11 @@
-import { useState } from 'react'
-import { checkHealth, confirmPickupCode, updateShipmentStatus, validatePickupCode } from '../api/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  checkHealth,
+  confirmPickupCode,
+  openShipmentTrackingSocket,
+  updateShipmentStatus,
+  validatePickupCode,
+} from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 const statusOptions = [
@@ -13,11 +19,16 @@ const statusOptions = [
 
 export default function TrackingPage() {
   const { token } = useAuth()
+  const wsRef = useRef(null)
   const [health, setHealth] = useState('idle')
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
   const [pickupValidation, setPickupValidation] = useState('')
   const [pickupConfirmation, setPickupConfirmation] = useState('')
+  const [socketState, setSocketState] = useState('idle')
+  const [liveShipmentId, setLiveShipmentId] = useState('')
+  const [socketInput, setSocketInput] = useState('')
+  const [liveEvents, setLiveEvents] = useState([])
   const [form, setForm] = useState({
     shipment_id: '',
     status: 'in_transit',
@@ -29,6 +40,38 @@ export default function TrackingPage() {
     code: '',
     relay_id: '',
   })
+  const liveHeadline = useMemo(() => {
+    if (!liveShipmentId) return '-'
+    return liveShipmentId
+  }, [liveShipmentId])
+
+  useEffect(() => {
+    if (!token || !liveShipmentId) {
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      setSocketState('idle')
+      return undefined
+    }
+
+    setSocketState('connecting')
+    const socket = openShipmentTrackingSocket(token, liveShipmentId, {
+      onOpen: () => setSocketState('connected'),
+      onClose: () => setSocketState('closed'),
+      onError: () => setSocketState('error'),
+      onMessage: (payload) => {
+        setLiveEvents((prev) => [payload, ...prev].slice(0, 30))
+      },
+    })
+    wsRef.current = socket
+    return () => {
+      socket.close()
+      if (wsRef.current === socket) {
+        wsRef.current = null
+      }
+    }
+  }, [token, liveShipmentId])
 
   async function onHealth() {
     setError('')
@@ -53,6 +96,7 @@ export default function TrackingPage() {
 
       const updated = await updateShipmentStatus(token, form.shipment_id, payload)
       setResult(updated.status || 'updated')
+      setSocketInput((prev) => prev || form.shipment_id)
     } catch (err) {
       setError(err.message)
     }
@@ -88,12 +132,26 @@ export default function TrackingPage() {
       const res = await confirmPickupCode(token, pickupForm.shipment_id, payload)
       if (res.confirmed) {
         setPickupConfirmation(`Remise confirmee. Statut: ${res.status || 'delivered'}`)
+        setSocketInput((prev) => prev || pickupForm.shipment_id)
       } else {
         setPickupConfirmation(`${res.message}${res.error_code ? ` (${res.error_code})` : ''}`)
       }
     } catch (err) {
       setError(err.message)
     }
+  }
+
+  function onConnectLive(e) {
+    e.preventDefault()
+    setError('')
+    setLiveEvents([])
+    setLiveShipmentId(socketInput.trim())
+  }
+
+  function onDisconnectLive() {
+    setLiveShipmentId('')
+    setLiveEvents([])
+    setSocketState('idle')
   }
 
   return (
@@ -208,6 +266,47 @@ export default function TrackingPage() {
         <p>
           Confirmation: <strong>{pickupConfirmation || '-'}</strong>
         </p>
+      </article>
+
+      <article className="panel">
+        <p className="eyebrow">Live Tracking</p>
+        <h2>WebSocket colis</h2>
+        <form className="form" onSubmit={onConnectLive}>
+          <label>
+            Shipment ID a ecouter
+            <input
+              placeholder="UUID"
+              value={socketInput}
+              onChange={(e) => setSocketInput(e.target.value)}
+              required
+            />
+          </label>
+          <div className="ops-actions">
+            <button type="submit" disabled={!token}>
+              Connecter
+            </button>
+            <button type="button" onClick={onDisconnectLive} disabled={!liveShipmentId}>
+              Deconnecter
+            </button>
+          </div>
+        </form>
+        <p>
+          Socket: <strong>{socketState}</strong>
+        </p>
+        <p>
+          Shipment live: <strong>{liveHeadline}</strong>
+        </p>
+        <div>
+          {liveEvents.length === 0 ? (
+            <p>Aucun evenement live pour le moment.</p>
+          ) : (
+            liveEvents.map((event, index) => (
+              <p key={`${event.timestamp || 'no-ts'}-${index}`}>
+                [{event.timestamp || '-'}] {event.event_type || event.kind || 'event'} - {event.status || '-'}
+              </p>
+            ))
+          )}
+        </div>
       </article>
 
       {error ? <p className="error">{error}</p> : null}

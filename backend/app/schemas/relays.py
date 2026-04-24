@@ -37,3 +37,26 @@ class RelayOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RelayInventoryUpsert(BaseModel):
+    shipment_id: UUID
+    present: bool = True
+
+
+class RelayInventoryOut(BaseModel):
+    id: UUID
+    relay_id: UUID | None = None
+    shipment_id: UUID | None = None
+    present: bool
+    shipment_no: str | None = None
+    shipment_status: str | None = None
+
+
+class RelayCapacityOut(BaseModel):
+    relay_id: UUID
+    storage_capacity: int | None = None
+    current_present: int
+    available: int | None = None
+    is_full: bool
+    utilization_ratio: float | None = None

@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
-from sqlalchemy import String, Numeric, ForeignKey, Text
+from datetime import UTC, datetime
+from sqlalchemy import DateTime, String, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -12,7 +13,14 @@ class Commission(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     shipment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.shipments.id"))
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.payment_transactions.id"))
+    commission_type: Mapped[str | None] = mapped_column(String(30))
+    beneficiary_kind: Mapped[str | None] = mapped_column(String(30))
+    beneficiary_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    status: Mapped[str | None] = mapped_column(String(30), default="accrued")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class Incident(Base):
@@ -21,7 +29,15 @@ class Incident(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     shipment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.shipments.id"))
+    incident_type: Mapped[str | None] = mapped_column(String(40))
+    description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.incident_statuses.code"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
 class IncidentUpdate(Base):
@@ -31,6 +47,7 @@ class IncidentUpdate(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.incidents.id"))
     message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class Claim(Base):
@@ -39,4 +56,15 @@ class Claim(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     shipment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.shipments.id"))
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.incidents.id"))
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    status: Mapped[str | None] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(Text)
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    refunded_payment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.payment_transactions.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

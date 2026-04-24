@@ -12,6 +12,7 @@ from app.schemas.codes import (
     PickupCodeValidationResponse,
 )
 from app.services.code_service import create_pickup_code, validate_pickup_code
+from app.realtime.events import emit_shipment_status_update
 from app.dependencies import require_roles
 
 router = APIRouter(prefix="/codes", tags=["codes"])
@@ -48,6 +49,12 @@ def create_pickup_code_endpoint(
     )
     db.commit()
     db.refresh(row)
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status=shipment.status or "ready_for_pickup",
+        event_type="shipment_ready_for_pickup",
+        relay_id=shipment.destination,
+    )
     return PickupCodeResponse(id=row.id, shipment_id=row.shipment_id, code=raw, expires_at=row.expires_at)
 
 
@@ -116,6 +123,12 @@ def confirm_pickup_code_endpoint(
     )
     db.commit()
     db.refresh(shipment)
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status=shipment.status or "delivered",
+        event_type=payload.event_type or "shipment_delivered_to_receiver",
+        relay_id=payload.relay_id,
+    )
     return PickupCodeConfirmResponse(
         shipment_id=shipment_id,
         confirmed=True,

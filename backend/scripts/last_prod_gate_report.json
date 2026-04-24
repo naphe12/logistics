@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-04-24T09:06:04.821639+00:00",
+  "finished_at": "2026-04-24T09:06:06.322342+00:00",
+  "ok": true,
+  "steps": [
+    {
+      "name": "Release Check",
+      "command": [
+        "C:\\soft\\logistics\\backend\\.venv\\Scripts\\python.exe",
+        "C:\\soft\\logistics\\backend\\scripts\\release_check.py",
+        "--sender-phone",
+        "+25762009001",
+        "--receiver-phone",
+        "+25762009002",
+        "--skip-smoke"
+      ],
+      "cwd": "C:\\soft\\logistics",
+      "return_code": 0,
+      "duration_ms": 1500,
+      "stdout_tail": "Listing 'backend/app'...\nListing 'backend/app\\\\api'...\nListing 'backend/app\\\\middleware'...\nListing 'backend/app\\\\models'...\nListing 'backend/app\\\\realtime'...\nListing 'backend/app\\\\schemas'...\nListing 'backend/app\\\\services'...\nListing 'backend/scripts'...\nCompiling 'backend/scripts\\\\prod_gate.py'...\n\n> frontend@0.1.0 build\n> vite build\n\n\u001b[36mvite v8.0.10 \u001b[32mbuilding client environment for production...\u001b[36m\u001b[39m\n\u001b[2K\ntransforming...\u00e2\u0153\u201c 40 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.40 kB \u00e2\u201d\u201a gzip:  0.27 kB\ndist/assets/index-Bk2RW9Ha.css    5.58 kB \u00e2\u201d\u201a gzip:  1.86 kB\ndist/assets/index-Bh884m9C.js   297.08 kB \u00e2\u201d\u201a gzip: 86.82 kB\n\n\u001b[32m\u00e2\u0153\u201c built in 299ms\u001b[39m\n\n=== Backend Compile ===\nC:\\soft\\logistics\\backend\\.venv\\Scripts\\python.exe -m compileall backend/app backend/scripts\n\n=== Frontend Build ===\nC:\\nvm4w\\nodejs\\npm.cmd run build\n\nRELEASE CHECK OK\n",
+      "stderr_tail": "",
+      "ok": true
+    }
+  ]
+}

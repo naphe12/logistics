@@ -5,6 +5,10 @@ const items = [
   { to: '/dashboard', label: 'Accueil' },
   { to: '/shipments', label: 'Creer colis' },
   { to: '/relays', label: 'Relais' },
+  { to: '/transport', label: 'Transport' },
+  { to: '/payments', label: 'Paiements' },
+  { to: '/incidents', label: 'Incidents' },
+  { to: '/backoffice', label: 'Backoffice' },
   { to: '/tracking', label: 'Operations' },
   { to: '/ussd-simulator', label: 'USSD' },
 ]

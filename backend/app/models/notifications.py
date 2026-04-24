@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Enum, String, Text
+from sqlalchemy import DateTime, Enum, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -18,4 +18,10 @@ class Notification(Base):
     channel: Mapped[NotificationChannelEnum] = mapped_column(
         Enum(NotificationChannelEnum, name="notification_channel_enum", schema="logix")
     )
+    delivery_status: Mapped[str | None] = mapped_column(String(20), default="queued")
+    error_message: Mapped[str | None] = mapped_column(Text)
+    attempts_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

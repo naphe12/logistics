@@ -4,10 +4,14 @@ import { useAuth } from './auth/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Sidebar from './components/Sidebar'
 import AuthPage from './pages/AuthPage'
+import BackofficePage from './pages/BackofficePage'
 import HomePage from './pages/HomePage'
+import IncidentsPage from './pages/IncidentsPage'
+import PaymentsPage from './pages/PaymentsPage'
 import RelaysPage from './pages/RelaysPage'
 import ShipmentsPage from './pages/ShipmentsPage'
 import TrackingPage from './pages/TrackingPage'
+import TransportPage from './pages/TransportPage'
 import UssdSimulatorPage from './pages/UssdSimulatorPage'
 import './styles.css'
 
@@ -73,6 +77,38 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <TrackingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transport"
+            element={
+              <ProtectedRoute>
+                <TransportPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payments"
+            element={
+              <ProtectedRoute>
+                <PaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/incidents"
+            element={
+              <ProtectedRoute>
+                <IncidentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/backoffice"
+            element={
+              <ProtectedRoute>
+                <BackofficePage />
               </ProtectedRoute>
             }
           />

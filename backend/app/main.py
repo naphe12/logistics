@@ -9,6 +9,12 @@ from app.api.ussd import router as ussd_router
 from app.api.codes import router as codes_router
 from app.api.payments import router as payments_router
 from app.api.relays import router as relays_router
+from app.api.transport import router as transport_router
+from app.api.incidents import router as incidents_router
+from app.api.backoffice import router as backoffice_router
+from app.api.ws import router as ws_router
+from app.middleware.security import RateLimitMiddleware, RequestAuditMiddleware
+from app.services.sms_worker_service import start_sms_queue_worker, stop_sms_queue_worker
 
 app = FastAPI(title="Logix API")
 
@@ -32,6 +38,8 @@ app.add_middleware(
     ],
     max_age=86400,
 )
+app.add_middleware(RequestAuditMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -40,3 +48,17 @@ app.include_router(ussd_router)
 app.include_router(codes_router)
 app.include_router(payments_router)
 app.include_router(relays_router)
+app.include_router(transport_router)
+app.include_router(incidents_router)
+app.include_router(backoffice_router)
+app.include_router(ws_router)
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    start_sms_queue_worker()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    stop_sms_queue_worker()

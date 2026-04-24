@@ -3,10 +3,13 @@ import {
   assignAgentToRelay,
   createRelay,
   deleteRelay,
+  getRelayCapacity,
   listRelayAgents,
+  listRelayInventory,
   listRelays,
   listUsers,
   unassignAgentFromRelay,
+  upsertRelayInventory,
   updateRelay,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -28,9 +31,12 @@ export default function RelaysPage() {
   const [agents, setAgents] = useState([])
   const [selectedRelayId, setSelectedRelayId] = useState('')
   const [relayAgents, setRelayAgents] = useState([])
+  const [relayInventory, setRelayInventory] = useState([])
+  const [relayCapacity, setRelayCapacity] = useState(null)
   const [relayForm, setRelayForm] = useState(emptyRelayForm)
   const [editingRelayId, setEditingRelayId] = useState('')
   const [assignAgentId, setAssignAgentId] = useState('')
+  const [inventoryForm, setInventoryForm] = useState({ shipment_id: '', present: true })
 
   const selectedRelay = useMemo(
     () => relays.find((relay) => relay.id === selectedRelayId) || null,
@@ -51,6 +57,18 @@ export default function RelaysPage() {
     setRelayAgents(data)
   }
 
+  async function loadRelayInventory(relayId) {
+    if (!token || !relayId) return
+    const data = await listRelayInventory(token, relayId, false)
+    setRelayInventory(data)
+  }
+
+  async function loadRelayCapacity(relayId) {
+    if (!token || !relayId) return
+    const data = await getRelayCapacity(token, relayId)
+    setRelayCapacity(data)
+  }
+
   useEffect(() => {
     loadRelaysAndAgents().catch((err) => setError(err.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -58,6 +76,8 @@ export default function RelaysPage() {
 
   useEffect(() => {
     loadRelayAgents(selectedRelayId).catch((err) => setError(err.message))
+    loadRelayInventory(selectedRelayId).catch((err) => setError(err.message))
+    loadRelayCapacity(selectedRelayId).catch((err) => setError(err.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRelayId, token])
 
@@ -143,6 +163,25 @@ export default function RelaysPage() {
       setMessage('Agent detache du relais')
       await loadRelayAgents(selectedRelayId)
       await loadRelaysAndAgents()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onUpsertInventory(e) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+    if (!selectedRelayId) return
+    try {
+      await upsertRelayInventory(token, selectedRelayId, {
+        shipment_id: inventoryForm.shipment_id,
+        present: inventoryForm.present,
+      })
+      setMessage('Inventaire relais mis a jour')
+      setInventoryForm({ shipment_id: '', present: true })
+      await loadRelayInventory(selectedRelayId)
+      await loadRelayCapacity(selectedRelayId)
     } catch (err) {
       setError(err.message)
     }
@@ -293,6 +332,58 @@ export default function RelaysPage() {
                 <button type="button" onClick={() => onUnassignAgent(agent.id)}>
                   Detacher
                 </button>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="page-grid two-cols">
+        <article className="panel">
+          <h3>Inventaire relais</h3>
+          <p>
+            Capacite: <strong>{relayCapacity?.storage_capacity ?? 'illimitee'}</strong> | present:{' '}
+            <strong>{relayCapacity?.current_present ?? '-'}</strong> | dispo:{' '}
+            <strong>{relayCapacity?.available ?? '-'}</strong> | plein:{' '}
+            <strong>{relayCapacity?.is_full ? 'oui' : 'non'}</strong>
+          </p>
+          <form className="form" onSubmit={onUpsertInventory}>
+            <label>
+              Shipment ID
+              <input
+                value={inventoryForm.shipment_id}
+                onChange={(e) => setInventoryForm((s) => ({ ...s, shipment_id: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Present au relais
+              <select
+                value={inventoryForm.present ? 'true' : 'false'}
+                onChange={(e) => setInventoryForm((s) => ({ ...s, present: e.target.value === 'true' }))}
+              >
+                <option value="true">Oui</option>
+                <option value="false">Non</option>
+              </select>
+            </label>
+            <button type="submit" disabled={!selectedRelayId}>
+              Upsert inventaire
+            </button>
+          </form>
+        </article>
+
+        <article className="panel">
+          <h3>Lignes inventaire</h3>
+          <div className="relay-list">
+            {relayInventory.length === 0 ? <p>Aucune ligne inventaire</p> : null}
+            {relayInventory.map((row) => (
+              <div key={row.id} className="relay-item">
+                <p>
+                  <strong>{row.shipment_no || row.shipment_id}</strong>
+                </p>
+                <p>
+                  status colis: {row.shipment_status || '-'} | present: {row.present ? 'oui' : 'non'}
+                </p>
               </div>
             ))}
           </div>

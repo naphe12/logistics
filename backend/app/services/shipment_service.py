@@ -8,6 +8,7 @@ from app.models.statuses import ShipmentStatus
 from app.schemas.shipments import ShipmentBulkStatusItem, ShipmentCreate, ShipmentStatusUpdate
 from app.services.code_service import create_pickup_code
 from app.services.notification_service import queue_and_send_sms
+from app.realtime.events import emit_shipment_status_update
 from app.enums import UserTypeEnum
 from app.models.users import User
 
@@ -74,6 +75,12 @@ def create_shipment(
     )
 
     db.refresh(shipment)
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status=shipment.status or "created",
+        event_type="shipment_created",
+        relay_id=payload.origin,
+    )
     return shipment
 
 
@@ -92,6 +99,12 @@ def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpda
     )
     db.commit()
     db.refresh(shipment)
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status=shipment.status or payload.status,
+        event_type=payload.event_type,
+        relay_id=payload.relay_id,
+    )
     return shipment
 
 
@@ -119,6 +132,13 @@ def create_shipment_event(
 
     db.commit()
     db.refresh(event)
+    if status is not None:
+        emit_shipment_status_update(
+            shipment_id=shipment.id,
+            status=status,
+            event_type=event_type,
+            relay_id=relay_id,
+        )
     return event
 
 
@@ -335,6 +355,7 @@ def bulk_update_shipment_status(
 
     results: list[dict[str, object]] = []
     succeeded = 0
+    updated_shipments: list[tuple[Shipment, ShipmentBulkStatusItem]] = []
 
     for index, item in enumerate(items):
         shipment = shipment_by_id.get(item.shipment_id)
@@ -366,10 +387,18 @@ def bulk_update_shipment_status(
                 event_type=item.event_type,
             )
         )
+        updated_shipments.append((shipment, item))
         results.append({"shipment_id": item.shipment_id, "success": True, "error": None})
         succeeded += 1
 
     db.commit()
+    for shipment, item in updated_shipments:
+        emit_shipment_status_update(
+            shipment_id=shipment.id,
+            status=shipment.status or item.status,
+            event_type=item.event_type,
+            relay_id=item.relay_id,
+        )
     failed = len(items) - succeeded
     return {
         "total": len(items),

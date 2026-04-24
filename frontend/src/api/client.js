@@ -30,6 +30,17 @@ function expireSession() {
   window.dispatchEvent(new Event('logix-session-expired'))
 }
 
+function getWsBaseUrl() {
+  const base = API_BASE_URL.replace(/\/+$/, '')
+  if (base.startsWith('https://')) {
+    return `wss://${base.slice('https://'.length)}`
+  }
+  if (base.startsWith('http://')) {
+    return `ws://${base.slice('http://'.length)}`
+  }
+  return base
+}
+
 async function parseError(res) {
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('application/json')) {
@@ -217,6 +228,23 @@ export async function listRelayAgents(token, relayId) {
   return request(`/relays/${relayId}/agents`, { token })
 }
 
+export async function listRelayInventory(token, relayId, presentOnly = false) {
+  const suffix = presentOnly ? '?present_only=true' : ''
+  return request(`/relays/${relayId}/inventory${suffix}`, { token })
+}
+
+export async function getRelayCapacity(token, relayId) {
+  return request(`/relays/${relayId}/capacity`, { token })
+}
+
+export async function upsertRelayInventory(token, relayId, payload) {
+  return request(`/relays/${relayId}/inventory`, {
+    method: 'PUT',
+    body: payload,
+    token,
+  })
+}
+
 export async function assignAgentToRelay(token, relayId, userId) {
   return request(`/relays/${relayId}/agents/${userId}`, {
     method: 'PUT',
@@ -229,5 +257,297 @@ export async function unassignAgentFromRelay(token, relayId, userId) {
     method: 'DELETE',
     token,
   })
+}
+
+export async function listTrips(token) {
+  return request('/transport/trips', { token })
+}
+
+export async function createTrip(token, payload) {
+  return request('/transport/trips', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function updateTrip(token, tripId, payload) {
+  return request(`/transport/trips/${tripId}`, {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function getTripManifest(token, tripId) {
+  return request(`/transport/trips/${tripId}/manifest`, { token })
+}
+
+export async function addShipmentToManifest(token, tripId, shipmentId) {
+  return request(`/transport/trips/${tripId}/manifest/shipments`, {
+    method: 'POST',
+    body: { shipment_id: shipmentId },
+    token,
+  })
+}
+
+export async function removeShipmentFromManifest(token, tripId, shipmentId) {
+  return request(`/transport/trips/${tripId}/manifest/shipments/${shipmentId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export async function scanTripDeparture(token, tripId, payload = {}) {
+  return request(`/transport/trips/${tripId}/scan/departure`, {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function scanTripArrival(token, tripId, payload = {}) {
+  return request(`/transport/trips/${tripId}/scan/arrival`, {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function completeTrip(token, tripId) {
+  return request(`/transport/trips/${tripId}/complete`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function listPaymentStatuses(token) {
+  return request('/payments/statuses', { token })
+}
+
+export async function listPayments(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.shipment_id) qs.set('shipment_id', filters.shipment_id)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.payer_phone) qs.set('payer_phone', filters.payer_phone)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/payments${suffix}`, { token })
+}
+
+export async function createPayment(token, payload) {
+  return request('/payments', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function initiatePayment(token, paymentId, externalRef = '') {
+  return request(`/payments/${paymentId}/initiate`, {
+    method: 'POST',
+    body: { external_ref: externalRef || null },
+    token,
+  })
+}
+
+export async function confirmPayment(token, paymentId, externalRef = '') {
+  return request(`/payments/${paymentId}/confirm`, {
+    method: 'POST',
+    body: { external_ref: externalRef || null },
+    token,
+  })
+}
+
+export async function failPayment(token, paymentId, reason) {
+  return request(`/payments/${paymentId}/fail`, {
+    method: 'POST',
+    body: { reason },
+    token,
+  })
+}
+
+export async function cancelPayment(token, paymentId) {
+  return request(`/payments/${paymentId}/cancel`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function refundPayment(token, paymentId, reason) {
+  return request(`/payments/${paymentId}/refund`, {
+    method: 'POST',
+    body: { reason },
+    token,
+  })
+}
+
+export async function listCommissions(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.shipment_id) qs.set('shipment_id', filters.shipment_id)
+  if (filters.payment_id) qs.set('payment_id', filters.payment_id)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/payments/commissions${suffix}`, { token })
+}
+
+export async function listIncidentStatuses(token) {
+  return request('/incidents/statuses', { token })
+}
+
+export async function listIncidents(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.shipment_id) qs.set('shipment_id', filters.shipment_id)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.incident_type) qs.set('incident_type', filters.incident_type)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/incidents${suffix}`, { token })
+}
+
+export async function createIncident(token, payload) {
+  return request('/incidents', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function updateIncidentStatus(token, incidentId, status) {
+  return request(`/incidents/${incidentId}/status`, {
+    method: 'PATCH',
+    body: { status },
+    token,
+  })
+}
+
+export async function listIncidentUpdates(token, incidentId) {
+  return request(`/incidents/${incidentId}/updates`, { token })
+}
+
+export async function addIncidentUpdate(token, incidentId, message) {
+  return request(`/incidents/${incidentId}/updates`, {
+    method: 'POST',
+    body: { message },
+    token,
+  })
+}
+
+export async function listClaims(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.incident_id) qs.set('incident_id', filters.incident_id)
+  if (filters.shipment_id) qs.set('shipment_id', filters.shipment_id)
+  if (filters.status) qs.set('status', filters.status)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/incidents/claims${suffix}`, { token })
+}
+
+export async function createClaim(token, payload) {
+  return request('/incidents/claims', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function updateClaimStatus(token, claimId, payload) {
+  return request(`/incidents/claims/${claimId}/status`, {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function getBackofficeOverview(token) {
+  return request('/backoffice/overview', { token })
+}
+
+export async function listBackofficeSmsLogs(token, limit = 100) {
+  return request(`/backoffice/logs/sms?limit=${limit}`, { token })
+}
+
+export async function listBackofficeUssdLogs(token, limit = 100) {
+  return request(`/backoffice/logs/ussd?limit=${limit}`, { token })
+}
+
+export async function listBackofficeAuditLogs(token, limit = 100) {
+  return request(`/backoffice/logs/audit?limit=${limit}`, { token })
+}
+
+export async function listBackofficeErrors(token, limit = 100) {
+  return request(`/backoffice/errors/recent?limit=${limit}`, { token })
+}
+
+export async function dispatchBackofficeSms(token, limit = 100) {
+  return request(`/backoffice/sms/dispatch?limit=${limit}`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function getBackofficeSmsWorkerStatus(token) {
+  return request('/backoffice/sms/worker/status', { token })
+}
+
+export async function listBackofficeAlerts(token, params = {}) {
+  const qs = new URLSearchParams()
+  if (params.delayed_hours) qs.set('delayed_hours', String(params.delayed_hours))
+  if (params.relay_utilization_warn !== undefined) {
+    qs.set('relay_utilization_warn', String(params.relay_utilization_warn))
+  }
+  if (params.limit) qs.set('limit', String(params.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/backoffice/alerts${suffix}`, { token })
+}
+
+export async function runBackofficeAutoDetectIncidents(token, delayedHours = 48, limit = 200) {
+  const qs = new URLSearchParams()
+  qs.set('delayed_hours', String(delayedHours))
+  qs.set('limit', String(limit))
+  return request(`/backoffice/incidents/auto-detect?${qs.toString()}`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function notifyBackofficeCriticalAlertsSms(
+  token,
+  {
+    delayedHours = 48,
+    relayUtilizationWarn = 0.9,
+    throttleMinutes = 30,
+    maxRecipients = 20,
+    maxPerHour = 4,
+  } = {},
+) {
+  const qs = new URLSearchParams()
+  qs.set('delayed_hours', String(delayedHours))
+  qs.set('relay_utilization_warn', String(relayUtilizationWarn))
+  qs.set('throttle_minutes', String(throttleMinutes))
+  qs.set('max_recipients', String(maxRecipients))
+  qs.set('max_per_hour', String(maxPerHour))
+  return request(`/backoffice/alerts/notify-critical?${qs.toString()}`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export function openShipmentTrackingSocket(token, shipmentId, handlers = {}) {
+  if (!token) throw new Error('Missing token')
+  if (!shipmentId) throw new Error('Missing shipment id')
+  const wsUrl = `${getWsBaseUrl()}/ws/shipments/${encodeURIComponent(shipmentId)}?token=${encodeURIComponent(token)}`
+  const ws = new WebSocket(wsUrl)
+
+  if (handlers.onOpen) ws.addEventListener('open', handlers.onOpen)
+  if (handlers.onClose) ws.addEventListener('close', handlers.onClose)
+  if (handlers.onError) ws.addEventListener('error', handlers.onError)
+  if (handlers.onMessage) {
+    ws.addEventListener('message', (event) => {
+      try {
+        handlers.onMessage(JSON.parse(event.data))
+      } catch {
+        handlers.onMessage({ kind: 'raw', value: String(event.data || '') })
+      }
+    })
+  }
+
+  return ws
 }
 
