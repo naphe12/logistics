@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.enums import UserTypeEnum
 
 
 class MetricItem(BaseModel):
@@ -55,6 +57,17 @@ class UssdLogOut(BaseModel):
         from_attributes = True
 
 
+class UssdKpisOut(BaseModel):
+    window_hours: int
+    total_requests: int
+    unique_callers: int
+    menu_hits: int
+    send_flow_hits: int
+    track_flow_hits: int
+    pickup_flow_hits: int
+    pay_flow_hits: int
+
+
 class AuditLogOut(BaseModel):
     id: UUID
     entity: str | None = None
@@ -62,6 +75,7 @@ class AuditLogOut(BaseModel):
     actor_user_id: UUID | None = None
     actor_phone: str | None = None
     ip_address: str | None = None
+    request_id: str | None = None
     endpoint: str | None = None
     method: str | None = None
     status_code: int | None = None
@@ -126,3 +140,162 @@ class CriticalAlertsSmsNotifyResult(BaseModel):
     skipped_reason: str | None = None
     throttle_minutes: int
     max_per_hour: int
+
+
+class DelayRiskSmsNotifyResult(BaseModel):
+    examined: int
+    alerts_triggered: int
+    recipients_targeted: int
+    notifications_queued: int
+    skipped_throttled: int
+    delayed_hours: int
+    throttle_hours: int
+
+
+class BroadcastSmsRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=320)
+    roles: list[UserTypeEnum] = Field(
+        default_factory=lambda: [
+            UserTypeEnum.admin,
+            UserTypeEnum.hub,
+            UserTypeEnum.agent,
+        ]
+    )
+    dry_run: bool = False
+    limit: int = Field(default=1000, ge=1, le=5000)
+    respect_preferences: bool = True
+
+
+class BroadcastSmsResult(BaseModel):
+    scanned_users: int
+    recipients_count: int
+    notifications_queued: int
+    skipped_no_phone: int
+    skipped_render_errors: int
+    dry_run: bool
+    sample_phones: list[str] = Field(default_factory=list)
+    sample_messages: list[str] = Field(default_factory=list)
+
+
+class BroadcastSmsPreviewItem(BaseModel):
+    phone: str
+    role: UserTypeEnum
+    rendered_message: str
+
+
+class BroadcastSmsPreviewResult(BaseModel):
+    scanned_users: int
+    recipients_count: int
+    skipped_no_phone: int
+    skipped_render_errors: int
+    items: list[BroadcastSmsPreviewItem] = Field(default_factory=list)
+
+
+class ScheduleSmsCampaignRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=320)
+    send_at: datetime
+    roles: list[UserTypeEnum] = Field(
+        default_factory=lambda: [
+            UserTypeEnum.admin,
+            UserTypeEnum.hub,
+            UserTypeEnum.agent,
+        ]
+    )
+    campaign_name: str | None = Field(default=None, max_length=120)
+    limit: int = Field(default=1000, ge=1, le=5000)
+    respect_preferences: bool = True
+
+
+class ScheduleSmsCampaignResult(BaseModel):
+    campaign_id: str
+    campaign_name: str | None = None
+    send_at: datetime
+    scanned_users: int
+    recipients_count: int
+    scheduled_count: int
+    skipped_no_phone: int
+    skipped_preferences: int
+    skipped_render_errors: int
+
+
+class ScheduledSmsCampaignOut(BaseModel):
+    campaign_id: str
+    campaign_name: str | None = None
+    send_at: datetime
+    recipients_count: int
+    created_at: datetime | None = None
+
+
+class CancelSmsCampaignResult(BaseModel):
+    campaign_id: str
+    cancelled_count: int
+
+
+class ScheduledSmsCampaignRecipientOut(BaseModel):
+    notification_id: UUID
+    phone: str | None = None
+    delivery_status: str | None = None
+    attempts_count: int | None = None
+    next_retry_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class ScheduledSmsCampaignDetailOut(BaseModel):
+    campaign_id: str
+    campaign_name: str | None = None
+    send_at: datetime | None = None
+    total: int
+    queued: int
+    cancelled: int
+    items: list[ScheduledSmsCampaignRecipientOut] = Field(default_factory=list)
+
+
+class RescheduleSmsCampaignResult(BaseModel):
+    campaign_id: str
+    send_at: datetime
+    rescheduled_count: int
+
+
+class SmsCampaignHistoryOut(BaseModel):
+    campaign_id: str
+    campaign_name: str | None = None
+    total: int
+    queued: int
+    processing: int
+    delivered: int
+    failed: int
+    dead: int
+    cancelled: int
+    skipped: int
+    created_at: datetime | None = None
+    last_activity_at: datetime | None = None
+
+
+class BackofficeGlobalSearchItem(BaseModel):
+    entity: str
+    id: str
+    label: str
+    status: str | None = None
+    created_at: datetime | None = None
+    highlights: list[str] = Field(default_factory=list)
+
+
+class BackofficeGlobalSearchResponse(BaseModel):
+    q: str
+    total: int
+    by_entity: dict[str, int]
+    items: list[BackofficeGlobalSearchItem]
+
+
+class BackofficeTimeseriesPoint(BaseModel):
+    day: str
+    shipments_created: int
+    payments_created: int
+    incidents_created: int
+    sms_sent: int
+    sms_failed: int
+
+
+class BackofficeTimeseriesOut(BaseModel):
+    days: int
+    points: list[BackofficeTimeseriesPoint]

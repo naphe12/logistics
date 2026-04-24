@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 from datetime import UTC, datetime
 from sqlalchemy import DateTime, String, Numeric, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -32,6 +32,7 @@ class Incident(Base):
     incident_type: Mapped[str | None] = mapped_column(String(40))
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.incident_statuses.code"))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

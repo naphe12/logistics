@@ -1,5 +1,5 @@
 from app.models.users import User
-from app.models.addresses import Address
+from app.models.addresses import Address, Commune, Province
 from app.models.relays import RelayPoint
 from app.models.transport import TransportPartner, Vehicle, Route, RouteStop, Trip
 from app.models.statuses import ShipmentStatus, PaymentStatus, IncidentStatus

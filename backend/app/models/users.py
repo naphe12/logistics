@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 from sqlalchemy import String, DateTime, Enum, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.enums import UserTypeEnum
@@ -16,6 +16,7 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
     relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
 
     user_type: Mapped[UserTypeEnum] = mapped_column(
         Enum(UserTypeEnum, name="user_type_enum", schema="logix")

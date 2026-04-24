@@ -1,4 +1,23 @@
 import os
+from pathlib import Path
+
+
+def load_local_env_file() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_local_env_file()
 
 
 def normalize_database_url(url: str) -> str:
@@ -42,6 +61,9 @@ RATE_LIMIT_USSD_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_USSD_MAX_REQUESTS", "12
 AUDIT_REQUEST_LOGGING_ENABLED = parse_bool_env("AUDIT_REQUEST_LOGGING_ENABLED", default=True)
 USSD_CREATE_WINDOW_SECONDS = int(os.getenv("USSD_CREATE_WINDOW_SECONDS", "3600"))
 USSD_CREATE_MAX_PER_WINDOW = int(os.getenv("USSD_CREATE_MAX_PER_WINDOW", "5"))
+USSD_INPUT_MAX_LENGTH = int(os.getenv("USSD_INPUT_MAX_LENGTH", "180"))
+USSD_MAX_STEPS = int(os.getenv("USSD_MAX_STEPS", "8"))
+USSD_ALLOWED_SERVICE_CODES = parse_csv_env("USSD_ALLOWED_SERVICE_CODES", "")
 
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "log")
 SMS_API_KEY = os.getenv("SMS_API_KEY", "")
@@ -67,6 +89,8 @@ OPS_ALERT_SMS_MAX_RECIPIENTS = int(os.getenv("OPS_ALERT_SMS_MAX_RECIPIENTS", "20
 OPS_ALERT_AUTONOTIFY_ENABLED = parse_bool_env("OPS_ALERT_AUTONOTIFY_ENABLED", default=True)
 OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS = int(os.getenv("OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS", "300"))
 OPS_ALERT_SMS_MAX_PER_HOUR = int(os.getenv("OPS_ALERT_SMS_MAX_PER_HOUR", "4"))
+PAYMENT_WEBHOOK_SECRET = os.getenv("PAYMENT_WEBHOOK_SECRET", "")
+PAYMENT_RECONCILE_STALE_MINUTES = int(os.getenv("PAYMENT_RECONCILE_STALE_MINUTES", "30"))
 
 CORS_ALLOW_ORIGINS = parse_csv_env(
     "CORS_ALLOW_ORIGINS",
@@ -76,4 +100,9 @@ CORS_ALLOW_ALL = parse_bool_env("CORS_ALLOW_ALL", default=False)
 CORS_ALLOW_ORIGIN_REGEX = os.getenv(
     "CORS_ALLOW_ORIGIN_REGEX",
     r"^https?://.+$",
+)
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+GEO_ACTIVE_PROVINCES = parse_csv_env(
+    "GEO_ACTIVE_PROVINCES",
+    "Bujumbura,Gitega,Butanyerera,Burunga,Buhumuza",
 )

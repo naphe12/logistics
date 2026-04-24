@@ -131,6 +131,7 @@ def request_login_otp(
         to=phone_e164,
         message=f"Votre code OTP Logix: {raw_code}. Expire dans {OTP_EXPIRE_MINUTES} min.",
         background_tasks=background_tasks,
+        respect_preferences=False,
     )
 
 

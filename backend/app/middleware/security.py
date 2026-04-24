@@ -1,7 +1,7 @@
 from collections import defaultdict, deque
 from threading import Lock
 from time import monotonic
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -53,6 +53,24 @@ def _extract_actor_user_id(request: Request):
         return None
 
 
+def _request_id(request: Request) -> str | None:
+    value = getattr(request.state, "request_id", None)
+    return value if isinstance(value, str) else None
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        incoming = (request.headers.get("x-request-id") or "").strip()
+        if incoming:
+            request_id = incoming[:64]
+        else:
+            request_id = str(uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
@@ -94,6 +112,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 actor_user_id=actor_user_id,
                 actor_phone=actor_phone,
                 ip_address=_client_ip(request),
+                request_id=_request_id(request),
                 endpoint=path,
                 method=request.method,
                 status_code=429,
@@ -170,6 +189,7 @@ class RequestAuditMiddleware(BaseHTTPMiddleware):
                 actor_user_id=actor_user_id,
                 actor_phone=actor_phone,
                 ip_address=_client_ip(request),
+                request_id=_request_id(request),
                 endpoint=path,
                 method=request.method,
                 status_code=response.status_code,

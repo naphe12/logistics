@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.enums import NotificationChannelEnum
@@ -18,6 +18,7 @@ class Notification(Base):
     channel: Mapped[NotificationChannelEnum] = mapped_column(
         Enum(NotificationChannelEnum, name="notification_channel_enum", schema="logix")
     )
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     delivery_status: Mapped[str | None] = mapped_column(String(20), default="queued")
     error_message: Mapped[str | None] = mapped_column(Text)
     attempts_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

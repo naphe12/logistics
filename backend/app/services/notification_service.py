@@ -15,7 +15,9 @@ from app.config import (
 )
 from app.database import SessionLocal
 from app.models.notifications import Notification
+from app.models.users import User
 from app.enums import NotificationChannelEnum
+from app.services.user_preferences_service import is_sms_allowed
 
 
 class SMSProviderError(Exception):
@@ -116,13 +118,126 @@ def _process_single_sms_background(notification_id) -> None:
         db.close()
 
 
+def list_notifications_page(
+    db: Session,
+    *,
+    phone: str | None = None,
+    delivery_status: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> dict:
+    offset = max(0, offset)
+    limit = max(1, min(limit, 200))
+    query = db.query(Notification)
+    if phone:
+        query = query.filter(Notification.phone == phone)
+    if delivery_status:
+        query = query.filter(Notification.delivery_status == delivery_status)
+    total = query.count()
+    items = query.order_by(Notification.created_at.desc()).offset(offset).limit(limit).all()
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
+def get_notification_stats(db: Session, *, phone: str | None = None) -> dict:
+    query = db.query(Notification)
+    if phone:
+        query = query.filter(Notification.phone == phone)
+    total = query.count()
+    delivered = query.filter(Notification.delivery_status == "delivered").count()
+    pending = query.filter(Notification.delivery_status.in_(["queued", "processing"])).count()
+    failed = query.filter(Notification.delivery_status == "failed").count()
+    dead = query.filter(Notification.delivery_status == "dead").count()
+    return {
+        "total": total,
+        "delivered": delivered,
+        "pending": pending,
+        "failed": failed,
+        "dead": dead,
+    }
+
+
+def retry_notification_send(db: Session, notification_id) -> Notification:
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise ValueError("Notification not found")
+    if notification.channel != NotificationChannelEnum.sms:
+        raise ValueError("Only SMS notifications can be retried")
+    if notification.delivery_status == "delivered":
+        return notification
+    if notification.attempts_count >= notification.max_attempts:
+        notification.attempts_count = 0
+    notification.delivery_status = "queued"
+    notification.next_retry_at = _now_utc()
+    notification.error_message = None
+    _attempt_notification_send(db, notification)
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
+def retry_notifications_bulk(
+    db: Session,
+    *,
+    statuses: list[str] | None = None,
+    phone: str | None = None,
+    limit: int = 200,
+) -> dict[str, int]:
+    allowed_statuses = {"failed", "dead", "queued"}
+    selected_statuses = [status for status in (statuses or ["failed", "dead"]) if status in allowed_statuses]
+    if not selected_statuses:
+        return {"scanned": 0, "retried": 0, "delivered": 0, "failed": 0, "dead": 0}
+
+    limit = max(1, min(limit, 1000))
+    query = db.query(Notification).filter(
+        Notification.channel == NotificationChannelEnum.sms,
+        Notification.delivery_status.in_(selected_statuses),
+    )
+    if phone:
+        query = query.filter(Notification.phone == phone)
+    rows = query.order_by(Notification.created_at.asc()).limit(limit).all()
+
+    result = {"scanned": len(rows), "retried": 0, "delivered": 0, "failed": 0, "dead": 0}
+    for notification in rows:
+        if notification.attempts_count >= notification.max_attempts:
+            notification.attempts_count = 0
+        notification.delivery_status = "queued"
+        notification.next_retry_at = _now_utc()
+        notification.error_message = None
+        outcome = _attempt_notification_send(db, notification)
+        result["retried"] += 1
+        if outcome in result:
+            result[outcome] += 1
+
+    db.commit()
+    return result
+
+
 def queue_and_send_sms(
     db: Session,
     to: str,
     message: str,
     background_tasks: BackgroundTasks | None = None,
+    respect_preferences: bool = True,
 ) -> Notification:
     now = _now_utc()
+    user = db.query(User).filter(User.phone_e164 == to).first() if respect_preferences else None
+    if respect_preferences and not is_sms_allowed(user):
+        notification = Notification(
+            phone=to,
+            message=message,
+            channel=NotificationChannelEnum.sms,
+            delivery_status="skipped",
+            error_message="Skipped due to user notification preferences",
+            attempts_count=0,
+            max_attempts=SMS_MAX_RETRIES,
+            next_retry_at=None,
+            last_attempt_at=None,
+        )
+        db.add(notification)
+        db.commit()
+        db.refresh(notification)
+        return notification
+
     notification = Notification(
         phone=to,
         message=message,

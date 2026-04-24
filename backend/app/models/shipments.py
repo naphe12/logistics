@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 from sqlalchemy import String, DateTime, ForeignKey, Boolean, Integer, Numeric
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -16,9 +16,14 @@ class Shipment(Base):
     sender_phone: Mapped[str | None] = mapped_column(String(20))
     receiver_name: Mapped[str | None] = mapped_column(String(180))
     receiver_phone: Mapped[str | None] = mapped_column(String(20))
+    origin_relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
+    destination_relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
+    delivery_address_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.addresses.id"))
+    delivery_note: Mapped[str | None] = mapped_column(String(500))
     origin: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     destination: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.shipment_statuses.code"))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -63,6 +68,7 @@ class ShipmentEvent(Base):
     shipment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.shipments.id"), nullable=False)
     relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     event_type: Mapped[str | None] = mapped_column(String(60))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     shipment = relationship("Shipment", back_populates="events")

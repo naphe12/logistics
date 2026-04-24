@@ -16,6 +16,7 @@ class AuditLog(Base):
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     actor_phone: Mapped[str | None] = mapped_column(String(20))
     ip_address: Mapped[str | None] = mapped_column(String(64))
+    request_id: Mapped[str | None] = mapped_column(String(64))
     endpoint: Mapped[str | None] = mapped_column(String(255))
     method: Mapped[str | None] = mapped_column(String(10))
     status_code: Mapped[int | None] = mapped_column(Integer)

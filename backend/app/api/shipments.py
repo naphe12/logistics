@@ -1,6 +1,9 @@
 from uuid import UUID
 from typing import Literal
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+import csv
+from io import StringIO
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Header
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.enums import UserTypeEnum
@@ -9,12 +12,18 @@ from app.schemas.shipments import (
     ShipmentBulkStatusUpdateRequest,
     ShipmentBulkStatusUpdateResponse,
     ShipmentCreate,
+    ShipmentAutoDetectStagnationResult,
+    MyShipmentsDashboardOut,
     ShipmentEventCreate,
     ShipmentEventOut,
+    ShipmentSlaRiskPage,
+    ShipmentTimelineItem,
+    ShipmentTrackingSummaryOut,
     ShipmentListPage,
     ShipmentOut,
     ShipmentStatusOut,
     ShipmentEtaOut,
+    ShipmentExtraUpdate,
     ShipmentOverviewStats,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
@@ -24,16 +33,26 @@ from app.services.shipment_service import (
     create_shipment_event,
     create_shipment,
     get_shipment,
+    get_shipment_timeline,
+    get_shipment_tracking_summary,
     get_shipment_overview_stats,
     get_shipment_timeseries_stats,
     list_shipment_events,
     list_my_shipments,
+    list_sla_risk_shipments,
     list_shipments,
     list_shipment_statuses,
     shipment_status_exists,
+    auto_detect_stagnation_incidents,
+    get_my_shipments_dashboard,
     get_shipment_eta,
+    update_shipment_extra,
     update_shipment_status,
     ShipmentNotFoundError,
+)
+from app.services.idempotency_service import (
+    has_processed_idempotency_key,
+    mark_processed_idempotency_key,
 )
 from app.dependencies import get_current_user, require_roles
 
@@ -82,6 +101,8 @@ def list_shipments_endpoint(
     receiver_phone: str | None = Query(default=None),
     shipment_no: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
+    extra_key: str | None = Query(default=None, min_length=1, max_length=120),
+    extra_value: str | None = Query(default=None, min_length=0, max_length=500),
     sort: Literal["created_at_desc", "created_at_asc"] = Query(default="created_at_desc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
@@ -108,6 +129,8 @@ def list_shipments_endpoint(
         receiver_phone=receiver_phone,
         shipment_no=shipment_no,
         q=q,
+        extra_key=extra_key,
+        extra_value=extra_value,
         sort=sort,
         offset=offset,
         limit=limit,
@@ -157,6 +180,8 @@ def list_my_shipments_endpoint(
     direction: Literal["all", "sent", "received"] = Query(default="all"),
     status: str | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=100),
+    extra_key: str | None = Query(default=None, min_length=1, max_length=120),
+    extra_value: str | None = Query(default=None, min_length=0, max_length=500),
     sort: Literal["created_at_desc", "created_at_asc"] = Query(default="created_at_desc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -181,11 +206,102 @@ def list_my_shipments_endpoint(
         direction=direction,
         status=status,
         q=q,
+        extra_key=extra_key,
+        extra_value=extra_value,
         sort=sort,
         offset=offset,
         limit=limit,
     )
     return ShipmentListPage(items=items, total=total, offset=offset, limit=limit)
+
+
+@router.get("/my/dashboard", response_model=MyShipmentsDashboardOut)
+def my_shipments_dashboard_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    return get_my_shipments_dashboard(db, current_user)
+
+
+@router.get("/my/export.csv")
+def export_my_shipments_csv_endpoint(
+    direction: Literal["all", "sent", "received"] = Query(default="all"),
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None, min_length=1, max_length=100),
+    sort: Literal["created_at_desc", "created_at_asc"] = Query(default="created_at_desc"),
+    limit: int = Query(default=5000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    if status:
+        _validate_status_or_422(db, status)
+
+    items, _total = list_my_shipments(
+        db,
+        current_user,
+        direction=direction,
+        status=status,
+        q=q,
+        sort=sort,
+        offset=0,
+        limit=limit,
+    )
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "shipment_id",
+            "shipment_no",
+            "status",
+            "sender_phone",
+            "receiver_phone",
+            "receiver_name",
+            "origin",
+            "destination",
+            "created_at",
+            "updated_at",
+        ]
+    )
+    for row in items:
+        writer.writerow(
+            [
+                str(row.id),
+                row.shipment_no or "",
+                row.status or "",
+                row.sender_phone or "",
+                row.receiver_phone or "",
+                row.receiver_name or "",
+                str(row.origin) if row.origin else "",
+                str(row.destination) if row.destination else "",
+                row.created_at.isoformat() if row.created_at else "",
+                row.updated_at.isoformat() if row.updated_at else "",
+            ]
+        )
+    csv_data = output.getvalue()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="my_shipments.csv"'},
+    )
 
 
 @router.get("/statuses", response_model=list[ShipmentStatusOut])
@@ -209,7 +325,7 @@ def list_shipment_statuses_endpoint(
 def bulk_update_shipment_status_endpoint(
     payload: ShipmentBulkStatusUpdateRequest,
     db: Session = Depends(get_db),
-    _user: User = Depends(
+    current_user: User = Depends(
         require_roles(
             UserTypeEnum.agent,
             UserTypeEnum.driver,
@@ -217,13 +333,71 @@ def bulk_update_shipment_status_endpoint(
             UserTypeEnum.admin,
         )
     ),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
     _validate_bulk_statuses_or_422(db, payload)
-    return bulk_update_shipment_status(
+    operation = "shipments_bulk_status"
+    if x_idempotency_key and has_processed_idempotency_key(
+        db,
+        operation=operation,
+        key=x_idempotency_key,
+        actor_user_id=current_user.id,
+    ):
+        raise HTTPException(status_code=409, detail="Duplicate idempotent request")
+    result = bulk_update_shipment_status(
         db,
         payload.items,
         continue_on_error=payload.continue_on_error,
+        dry_run=payload.dry_run,
     )
+    if x_idempotency_key:
+        mark_processed_idempotency_key(
+            db,
+            operation=operation,
+            key=x_idempotency_key,
+            actor_user_id=current_user.id,
+            actor_phone=current_user.phone_e164,
+        )
+        db.commit()
+    return result
+
+
+@router.get("/ops/sla-risks", response_model=ShipmentSlaRiskPage)
+def list_sla_risks_endpoint(
+    state: Literal["on_track", "at_risk", "late"] | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    return list_sla_risk_shipments(
+        db,
+        current_user,
+        state=state,
+        limit=limit,
+    )
+
+
+@router.post("/ops/incidents/auto-detect-stagnation", response_model=ShipmentAutoDetectStagnationResult)
+def auto_detect_stagnation_incidents_endpoint(
+    limit: int = Query(default=200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return auto_detect_stagnation_incidents(db, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{shipment_id}", response_model=ShipmentOut)
@@ -245,6 +419,27 @@ def get_shipment_endpoint(
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
     return shipment
+
+
+@router.get("/{shipment_id}/tracking-summary", response_model=ShipmentTrackingSummaryOut)
+def get_shipment_tracking_summary_endpoint(
+    shipment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return get_shipment_tracking_summary(db, shipment_id, current_user)
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{shipment_id}/eta", response_model=ShipmentEtaOut)
@@ -289,6 +484,27 @@ def list_shipment_events_endpoint(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/{shipment_id}/timeline", response_model=list[ShipmentTimelineItem])
+def shipment_timeline_endpoint(
+    shipment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return get_shipment_timeline(db, shipment_id, current_user)
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/{shipment_id}/events", response_model=ShipmentEventOut)
 def create_shipment_event_endpoint(
     shipment_id: UUID,
@@ -313,6 +529,7 @@ def create_shipment_event_endpoint(
             event_type=payload.event_type,
             relay_id=payload.relay_id,
             status=payload.status,
+            extra=payload.extra,
         )
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -336,5 +553,30 @@ def update_shipment_status_endpoint(
 
     try:
         return update_shipment_status(db, shipment_id, payload)
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/{shipment_id}/extra", response_model=ShipmentOut)
+def update_shipment_extra_endpoint(
+    shipment_id: UUID,
+    payload: ShipmentExtraUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return update_shipment_extra(
+            db,
+            shipment_id,
+            extra=payload.extra,
+            merge=payload.merge,
+        )
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

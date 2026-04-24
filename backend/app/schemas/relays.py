@@ -12,6 +12,8 @@ class RelayBase(BaseModel):
 
 
 class RelayCreate(RelayBase):
+    province_id: UUID | None = None
+    commune_id: UUID | None = None
     address_id: UUID | None = None
 
 
@@ -22,6 +24,8 @@ class RelayUpdate(BaseModel):
     opening_hours: str | None = Field(default=None, max_length=120)
     storage_capacity: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
+    province_id: UUID | None = None
+    commune_id: UUID | None = None
     address_id: UUID | None = None
 
 
@@ -30,6 +34,8 @@ class RelayOut(BaseModel):
     relay_code: str | None = None
     name: str | None = None
     type: str | None = None
+    province_id: UUID | None = None
+    commune_id: UUID | None = None
     address_id: UUID | None = None
     opening_hours: str | None = None
     storage_capacity: int | None = None

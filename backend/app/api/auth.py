@@ -10,6 +10,7 @@ from app.enums import UserTypeEnum
 from app.models.users import User
 from app.schemas.auth import (
     LoginRequest,
+    NotificationPreferencesUpdateRequest,
     OTPRequest,
     OTPVerifyRequest,
     RefreshTokenRequest,
@@ -26,6 +27,10 @@ from app.services.auth_service import (
     refresh_access_token,
     request_login_otp,
     verify_login_otp,
+)
+from app.services.user_preferences_service import (
+    get_notification_preferences,
+    set_notification_preferences,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -95,7 +100,23 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
-    return current_user
+    payload = UserOut.model_validate(current_user)
+    payload.notification_preferences = get_notification_preferences(current_user)
+    return payload
+
+
+@router.get("/me/notification-preferences")
+def me_notification_preferences(current_user: User = Depends(get_current_user)):
+    return get_notification_preferences(current_user)
+
+
+@router.patch("/me/notification-preferences")
+def update_me_notification_preferences(
+    payload: NotificationPreferencesUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return set_notification_preferences(db, current_user, payload.model_dump())
 
 
 @router.get("/users", response_model=list[UserOut])

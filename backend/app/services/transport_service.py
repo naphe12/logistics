@@ -71,6 +71,19 @@ def _destination_utilization_ratio(db: Session, destination_id: UUID | None) -> 
     return present_count / relay.storage_capacity
 
 
+def _shipment_has_critical_incident(db: Session, shipment_id: UUID) -> bool:
+    return (
+        db.query(Incident.id)
+        .filter(
+            Incident.shipment_id == shipment_id,
+            Incident.status.in_(["open", "investigating"]),
+            func.lower(func.coalesce(Incident.incident_type, "")).in_(CRITICAL_INCIDENT_TYPES),
+        )
+        .first()
+        is not None
+    )
+
+
 def suggest_shipment_priority_queue(
     db: Session,
     *,
@@ -362,16 +375,210 @@ def suggest_shipment_grouping(
     }
 
 
-def list_trips(db: Session) -> list[Trip]:
-    return db.query(Trip).order_by(Trip.id.desc()).all()
+def get_trip_operational_summary(
+    db: Session,
+    trip_id: UUID,
+    *,
+    vehicle_capacity: int | None = None,
+) -> dict:
+    trip = get_trip(db, trip_id)
+    if not trip:
+        raise TripNotFoundError("Trip not found")
+
+    capacity_limit = (
+        max(1, min(vehicle_capacity, 1000))
+        if vehicle_capacity is not None
+        else (DEFAULT_VEHICLE_CAPACITY if trip.vehicle_id else 1000)
+    )
+    manifest = _get_or_create_manifest(db, trip_id)
+    rows = db.query(ManifestShipment).filter(ManifestShipment.manifest_id == manifest.id).all()
+    shipment_ids = [row.shipment_id for row in rows if row.shipment_id is not None]
+    shipments = db.query(Shipment).filter(Shipment.id.in_(shipment_ids)).all() if shipment_ids else []
+
+    blocked_ids: list[UUID] = []
+    status_breakdown: dict[str, int] = {}
+    critical_incident_count = 0
+    at_risk_count = 0
+    for shipment in shipments:
+        status = shipment.status or "unknown"
+        status_breakdown[status] = status_breakdown.get(status, 0) + 1
+        has_critical = _shipment_has_critical_incident(db, shipment.id)
+        if has_critical:
+            critical_incident_count += 1
+            blocked_ids.append(shipment.id)
+        if has_critical or status not in LOADABLE_STATUSES:
+            at_risk_count += 1
+
+    manifest_count = len(shipments)
+    return {
+        "trip_id": trip.id,
+        "manifest_id": manifest.id,
+        "status": trip.status,
+        "vehicle_capacity": capacity_limit,
+        "manifest_count": manifest_count,
+        "load_ratio": round(manifest_count / capacity_limit, 4) if capacity_limit > 0 else 0.0,
+        "blocked_count": len(blocked_ids),
+        "critical_incident_count": critical_incident_count,
+        "at_risk_count": at_risk_count,
+        "status_breakdown": status_breakdown,
+        "blocked_shipment_ids": blocked_ids,
+    }
+
+
+def replan_trip_from_incidents(
+    db: Session,
+    trip_id: UUID,
+    *,
+    max_replace: int = 5,
+    candidate_limit: int = 500,
+    vehicle_capacity: int | None = None,
+    dry_run: bool = False,
+) -> dict:
+    trip = get_trip(db, trip_id)
+    if not trip:
+        raise TripNotFoundError("Trip not found")
+
+    max_replace = max(1, min(max_replace, 200))
+    candidate_limit = max(1, min(candidate_limit, 1000))
+    capacity_limit = (
+        max(1, min(vehicle_capacity, 1000))
+        if vehicle_capacity is not None
+        else (DEFAULT_VEHICLE_CAPACITY if trip.vehicle_id else 1000)
+    )
+    manifest = _get_or_create_manifest(db, trip_id)
+    manifest_rows = db.query(ManifestShipment).filter(ManifestShipment.manifest_id == manifest.id).all()
+    row_by_shipment_id = {row.shipment_id: row for row in manifest_rows if row.shipment_id is not None}
+    existing_ids = {row.shipment_id for row in manifest_rows if row.shipment_id is not None}
+    before_count = len(existing_ids)
+
+    shipments = db.query(Shipment).filter(Shipment.id.in_(existing_ids)).all() if existing_ids else []
+    blocked: list[dict] = []
+    for shipment in shipments:
+        reasons: list[str] = []
+        status = shipment.status or "created"
+        if status not in LOADABLE_STATUSES:
+            reasons.append("status_not_loadable")
+        if _shipment_has_critical_incident(db, shipment.id):
+            reasons.append("critical_incident_open")
+        if reasons:
+            blocked.append(
+                {
+                    "shipment_id": shipment.id,
+                    "shipment_no": shipment.shipment_no,
+                    "reasons": reasons,
+                }
+            )
+
+    to_remove = blocked[:max_replace]
+    to_remove_ids = {item["shipment_id"] for item in to_remove}
+    current_ids = {sid for sid in existing_ids if sid not in to_remove_ids}
+    route = db.query(Route).filter(Route.id == trip.route_id).first() if trip.route_id else None
+    slots_left = max(0, min(max_replace, capacity_limit - len(current_ids)))
+
+    priority = suggest_shipment_priority_queue(
+        db,
+        max_results=candidate_limit,
+        limit=candidate_limit,
+    )
+    candidates = priority.get("suggestions", [])
+    added: list[dict] = []
+    for item in candidates:
+        shipment_id = item.get("shipment_id")
+        if shipment_id is None or shipment_id in current_ids:
+            continue
+        shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+        if not shipment:
+            continue
+        rejection_reasons: list[str] = []
+        shipment_status = shipment.status or "created"
+        if shipment_status not in LOADABLE_STATUSES:
+            rejection_reasons.append("status_not_loadable")
+        if shipment_status == "created" and (shipment.origin is None or shipment.destination is None):
+            rejection_reasons.append("created_missing_route")
+        if route is not None:
+            if route.origin is not None and shipment.origin != route.origin:
+                rejection_reasons.append("route_origin_mismatch")
+            if route.destination is not None and shipment.destination != route.destination:
+                rejection_reasons.append("route_destination_mismatch")
+        if _shipment_has_critical_incident(db, shipment.id):
+            rejection_reasons.append("critical_incident_open")
+        if rejection_reasons:
+            continue
+
+        current_ids.add(shipment_id)
+        added.append(
+            {
+                "shipment_id": shipment_id,
+                "shipment_no": item.get("shipment_no"),
+                "priority_score": int(item.get("priority_score") or 0),
+                "reasons": list(item.get("reasons") or []),
+            }
+        )
+        if len(added) >= slots_left:
+            break
+
+    if not dry_run:
+        for item in to_remove:
+            row = row_by_shipment_id.get(item["shipment_id"])
+            if row is not None:
+                db.delete(row)
+        for item in added:
+            db.add(ManifestShipment(manifest_id=manifest.id, shipment_id=item["shipment_id"]))
+        log_action(
+            db,
+            entity="manifest_shipments",
+            action="replan_incidents_remove",
+            status_code=len(to_remove),
+        )
+        log_action(
+            db,
+            entity="manifest_shipments",
+            action="replan_incidents_add",
+            status_code=len(added),
+        )
+        db.commit()
+        db.refresh(manifest)
+
+    return {
+        "trip_id": trip.id,
+        "manifest_id": manifest.id,
+        "before_count": before_count,
+        "after_count": before_count - len(to_remove) + len(added),
+        "removed_count": len(to_remove),
+        "added_count": len(added),
+        "dry_run": dry_run,
+        "removed": to_remove,
+        "added": added,
+    }
+
+
+def list_trips(
+    db: Session,
+    *,
+    status: str | None = None,
+    route_id: UUID | None = None,
+    vehicle_id: UUID | None = None,
+    extra_key: str | None = None,
+    extra_value: str | None = None,
+) -> list[Trip]:
+    query = db.query(Trip)
+    if status:
+        query = query.filter(Trip.status == status)
+    if route_id is not None:
+        query = query.filter(Trip.route_id == route_id)
+    if vehicle_id is not None:
+        query = query.filter(Trip.vehicle_id == vehicle_id)
+    if extra_key and extra_value is not None:
+        query = query.filter(Trip.extra[extra_key].astext == extra_value)
+    return query.order_by(Trip.id.desc()).all()
 
 
 def get_trip(db: Session, trip_id: UUID) -> Trip | None:
     return db.query(Trip).filter(Trip.id == trip_id).first()
 
 
-def create_trip(db: Session, *, route_id=None, vehicle_id=None, status: str = "planned") -> Trip:
-    trip = Trip(route_id=route_id, vehicle_id=vehicle_id, status=status)
+def create_trip(db: Session, *, route_id=None, vehicle_id=None, status: str = "planned", extra: dict | None = None) -> Trip:
+    trip = Trip(route_id=route_id, vehicle_id=vehicle_id, status=status, extra=extra)
     db.add(trip)
     log_action(db, entity="trips", action="create")
     db.commit()
@@ -379,7 +586,15 @@ def create_trip(db: Session, *, route_id=None, vehicle_id=None, status: str = "p
     return trip
 
 
-def update_trip(db: Session, trip_id: UUID, *, route_id=None, vehicle_id=None, status: str | None = None) -> Trip:
+def update_trip(
+    db: Session,
+    trip_id: UUID,
+    *,
+    route_id=None,
+    vehicle_id=None,
+    status: str | None = None,
+    extra: dict | None = None,
+) -> Trip:
     trip = get_trip(db, trip_id)
     if not trip:
         raise TripNotFoundError("Trip not found")
@@ -389,6 +604,8 @@ def update_trip(db: Session, trip_id: UUID, *, route_id=None, vehicle_id=None, s
         trip.vehicle_id = vehicle_id
     if status is not None:
         trip.status = status
+    if extra is not None:
+        trip.extra = extra
     log_action(db, entity="trips", action="update")
     db.commit()
     db.refresh(trip)
@@ -572,3 +789,25 @@ def complete_trip(db: Session, trip_id: UUID) -> Trip:
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def update_trip_extra(
+    db: Session,
+    trip_id: UUID,
+    *,
+    extra: dict,
+    merge: bool = True,
+) -> Trip:
+    trip = get_trip(db, trip_id)
+    if not trip:
+        raise TripNotFoundError("Trip not found")
+
+    if merge and isinstance(trip.extra, dict):
+        trip.extra = {**trip.extra, **extra}
+    else:
+        trip.extra = extra
+
+    log_action(db, entity="trips", action="extra_update")
+    db.commit()
+    db.refresh(trip)
+    return trip

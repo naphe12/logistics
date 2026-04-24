@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +10,7 @@ class IncidentCreate(BaseModel):
     shipment_id: UUID
     incident_type: str = Field(pattern=r"^(lost|damaged|delayed|claim)$")
     description: str = Field(min_length=4, max_length=4000)
+    extra: dict[str, Any] | None = None
 
 
 class IncidentUpdateStatusRequest(BaseModel):
@@ -25,6 +27,7 @@ class IncidentOut(BaseModel):
     incident_type: str | None = None
     description: str | None = None
     status: str | None = None
+    extra: dict[str, Any] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -69,3 +72,48 @@ class ClaimOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class IncidentExtraUpdate(BaseModel):
+    extra: dict[str, Any]
+    merge: bool = True
+
+
+class IncidentDashboardOut(BaseModel):
+    total: int
+    open_count: int
+    investigating_count: int
+    resolved_count: int
+    stale_open_count: int
+    by_type: dict[str, int]
+
+
+class IncidentTimelineItem(BaseModel):
+    occurred_at: datetime
+    kind: str
+    status: str | None = None
+    message: str | None = None
+    incident_type: str | None = None
+    extra: dict[str, Any] | None = None
+
+
+class IncidentAutoEscalateResult(BaseModel):
+    examined: int
+    escalated: int
+    skipped: int
+    stale_hours: int
+    dry_run: bool
+
+
+class IncidentListPageOut(BaseModel):
+    items: list[IncidentOut]
+    total: int
+    offset: int
+    limit: int
+
+
+class ClaimListPageOut(BaseModel):
+    items: list[ClaimOut]
+    total: int
+    offset: int
+    limit: int

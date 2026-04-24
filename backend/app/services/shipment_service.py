@@ -5,9 +5,10 @@ from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc, func, or_
 from app.models.shipments import RelayInventory, Shipment, ShipmentEvent
-from app.models.statuses import ShipmentStatus
+from app.models.statuses import IncidentStatus, ShipmentStatus
 from app.models.relays import RelayPoint
-from app.models.incidents import Incident
+from app.models.incidents import Incident, IncidentUpdate
+from app.services.audit_service import log_action
 from app.schemas.shipments import ShipmentBulkStatusItem, ShipmentCreate, ShipmentStatusUpdate
 from app.services.code_service import create_pickup_code
 from app.services.notification_service import queue_and_send_sms
@@ -64,15 +65,23 @@ def create_shipment(
     payload: ShipmentCreate,
     background_tasks: BackgroundTasks | None = None,
 ) -> Shipment:
+    origin_relay_id = payload.origin_relay_id or payload.origin
+    destination_relay_id = payload.destination_relay_id or payload.destination
+
     shipment = Shipment(
         shipment_no=generate_shipment_no(),
         sender_id=payload.sender_id,
         sender_phone=payload.sender_phone,
         receiver_name=payload.receiver_name,
         receiver_phone=payload.receiver_phone,
-        origin=payload.origin,
-        destination=payload.destination,
+        origin_relay_id=origin_relay_id,
+        destination_relay_id=destination_relay_id,
+        delivery_address_id=payload.delivery_address_id,
+        delivery_note=payload.delivery_note,
+        origin=origin_relay_id,
+        destination=destination_relay_id,
         status="created",
+        extra=payload.extra,
     )
     db.add(shipment)
     db.flush()
@@ -80,8 +89,9 @@ def create_shipment(
     db.add(
         ShipmentEvent(
             shipment_id=shipment.id,
-            relay_id=payload.origin,
+            relay_id=origin_relay_id,
             event_type="shipment_created",
+            extra=None,
         )
     )
 
@@ -105,7 +115,7 @@ def create_shipment(
         shipment_id=shipment.id,
         status=shipment.status or "created",
         event_type="shipment_created",
-        relay_id=payload.origin,
+        relay_id=origin_relay_id,
     )
     return shipment
 
@@ -121,6 +131,7 @@ def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpda
             shipment_id=shipment.id,
             relay_id=payload.relay_id,
             event_type=payload.event_type,
+            extra=payload.extra,
         )
     )
     db.commit()
@@ -141,6 +152,7 @@ def create_shipment_event(
     event_type: str,
     relay_id=None,
     status: str | None = None,
+    extra: dict | None = None,
 ) -> ShipmentEvent:
     shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
     if not shipment:
@@ -150,6 +162,7 @@ def create_shipment_event(
         shipment_id=shipment.id,
         relay_id=relay_id,
         event_type=event_type,
+        extra=extra,
     )
     db.add(event)
 
@@ -177,6 +190,8 @@ def list_shipments(
     receiver_phone: str | None = None,
     shipment_no: str | None = None,
     q: str | None = None,
+    extra_key: str | None = None,
+    extra_value: str | None = None,
     sort: str = "created_at_desc",
     offset: int = 0,
     limit: int = 50,
@@ -202,6 +217,8 @@ def list_shipments(
                 Shipment.receiver_name.ilike(like),
             )
         )
+    if extra_key and extra_value is not None:
+        query = query.filter(Shipment.extra[extra_key].astext == extra_value)
 
     if sort == "created_at_asc":
         query = query.order_by(asc(Shipment.created_at))
@@ -307,6 +324,8 @@ def list_my_shipments(
     direction: str = "all",
     status: str | None = None,
     q: str | None = None,
+    extra_key: str | None = None,
+    extra_value: str | None = None,
     sort: str = "created_at_desc",
     offset: int = 0,
     limit: int = 50,
@@ -341,6 +360,8 @@ def list_my_shipments(
                 Shipment.receiver_name.ilike(like),
             )
         )
+    if extra_key and extra_value is not None:
+        query = query.filter(Shipment.extra[extra_key].astext == extra_value)
 
     if sort == "created_at_asc":
         query = query.order_by(asc(Shipment.created_at))
@@ -384,6 +405,7 @@ def bulk_update_shipment_status(
     items: list[ShipmentBulkStatusItem],
     *,
     continue_on_error: bool = True,
+    dry_run: bool = False,
 ) -> dict[str, int | list[dict[str, object]]]:
     shipment_ids = [item.shipment_id for item in items]
     existing_shipments = (
@@ -419,26 +441,29 @@ def bulk_update_shipment_status(
                 break
             continue
 
-        shipment.status = item.status
-        db.add(
-            ShipmentEvent(
-                shipment_id=shipment.id,
-                relay_id=item.relay_id,
-                event_type=item.event_type,
+        if not dry_run:
+            shipment.status = item.status
+            db.add(
+                ShipmentEvent(
+                    shipment_id=shipment.id,
+                    relay_id=item.relay_id,
+                    event_type=item.event_type,
+                    extra=item.extra,
+                )
             )
-        )
-        updated_shipments.append((shipment, item))
+            updated_shipments.append((shipment, item))
         results.append({"shipment_id": item.shipment_id, "success": True, "error": None})
         succeeded += 1
 
-    db.commit()
-    for shipment, item in updated_shipments:
-        emit_shipment_status_update(
-            shipment_id=shipment.id,
-            status=shipment.status or item.status,
-            event_type=item.event_type,
-            relay_id=item.relay_id,
-        )
+    if not dry_run:
+        db.commit()
+        for shipment, item in updated_shipments:
+            emit_shipment_status_update(
+                shipment_id=shipment.id,
+                status=shipment.status or item.status,
+                event_type=item.event_type,
+                relay_id=item.relay_id,
+            )
     failed = len(items) - succeeded
     return {
         "total": len(items),
@@ -681,3 +706,304 @@ def get_shipment_eta(db: Session, shipment_id, current_user: User) -> dict:
     eta["factors"] = factors
     eta["basis"] = f"{eta['basis']}+dynamic_risk_v3"
     return eta
+
+
+def update_shipment_extra(
+    db: Session,
+    shipment_id,
+    *,
+    extra: dict,
+    merge: bool = True,
+) -> Shipment:
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    if merge and isinstance(shipment.extra, dict):
+        shipment.extra = {**shipment.extra, **extra}
+    else:
+        shipment.extra = extra
+
+    db.commit()
+    db.refresh(shipment)
+    return shipment
+
+
+def get_shipment_tracking_summary(db: Session, shipment_id, current_user: User) -> dict:
+    shipment = get_shipment(db, shipment_id, current_user)
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    now = datetime.now(UTC)
+    created_at = shipment.created_at or now
+    last_event_at = (
+        db.query(func.max(ShipmentEvent.created_at))
+        .filter(ShipmentEvent.shipment_id == shipment.id)
+        .scalar()
+    ) or created_at
+    elapsed_hours = max(0, int((now - created_at).total_seconds() // 3600))
+
+    median_hours, sample_count = _get_corridor_median_hours(db, shipment)
+    if median_hours is not None and sample_count >= ETA_MIN_CORRIDOR_SAMPLES:
+        target_sla_hours = max(1, median_hours)
+    else:
+        status = shipment.status or "created"
+        target_sla_hours = ETA_BASE_HOURS_BY_STATUS.get(status, 48)
+
+    remaining_sla_hours = target_sla_hours - elapsed_hours
+    open_incidents = (
+        db.query(Incident.id)
+        .filter(
+            Incident.shipment_id == shipment.id,
+            Incident.status.in_(["open", "investigating"]),
+        )
+        .count()
+    )
+    stagnation_hours = max(0, int((now - last_event_at).total_seconds() // 3600))
+    threshold_hours = ETA_STAGNATION_THRESHOLDS_HOURS.get(shipment.status or "created", 12)
+
+    risk_reasons: list[str] = []
+    if remaining_sla_hours <= 0:
+        sla_state = "late"
+        risk_reasons.append("sla_deadline_missed")
+    elif remaining_sla_hours <= 6:
+        sla_state = "at_risk"
+        risk_reasons.append("sla_near_deadline")
+    else:
+        sla_state = "on_track"
+    if stagnation_hours > threshold_hours:
+        risk_reasons.append("stagnation_detected")
+        if sla_state == "on_track":
+            sla_state = "at_risk"
+    if open_incidents > 0:
+        risk_reasons.append("open_incidents")
+        if sla_state == "on_track":
+            sla_state = "at_risk"
+
+    eta = get_shipment_eta(db, shipment_id, current_user)
+    return {
+        "shipment_id": shipment.id,
+        "shipment_no": shipment.shipment_no,
+        "status": shipment.status,
+        "created_at": shipment.created_at,
+        "last_event_at": last_event_at,
+        "elapsed_hours": elapsed_hours,
+        "target_sla_hours": target_sla_hours,
+        "remaining_sla_hours": remaining_sla_hours,
+        "sla_state": sla_state,
+        "open_incidents": open_incidents,
+        "stagnation_hours": stagnation_hours,
+        "risk_reasons": risk_reasons,
+        "estimated_delivery_at": eta["estimated_delivery_at"],
+        "eta_basis": eta["basis"],
+    }
+
+
+def list_sla_risk_shipments(
+    db: Session,
+    current_user: User,
+    *,
+    state: str | None = None,
+    limit: int = 100,
+) -> dict:
+    limit = max(1, min(limit, 500))
+    candidates = (
+        _apply_visibility_scope(db.query(Shipment), current_user)
+        .filter(Shipment.status.notin_(["delivered", "cancelled"]))
+        .order_by(desc(Shipment.created_at))
+        .limit(limit)
+        .all()
+    )
+    items: list[dict] = []
+    for shipment in candidates:
+        summary = get_shipment_tracking_summary(db, shipment.id, current_user)
+        if state and summary["sla_state"] != state:
+            continue
+        items.append(summary)
+    return {
+        "items": items,
+        "total": len(items),
+        "limit": limit,
+    }
+
+
+def get_shipment_timeline(db: Session, shipment_id, current_user: User) -> list[dict]:
+    shipment = get_shipment(db, shipment_id, current_user)
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    items: list[dict] = []
+    events = (
+        db.query(ShipmentEvent)
+        .filter(ShipmentEvent.shipment_id == shipment_id)
+        .order_by(ShipmentEvent.created_at.desc())
+        .all()
+    )
+    incidents = (
+        db.query(Incident)
+        .filter(Incident.shipment_id == shipment_id)
+        .order_by(Incident.created_at.desc())
+        .all()
+    )
+    incident_ids = [row.id for row in incidents]
+    incident_updates = []
+    if incident_ids:
+        incident_updates = (
+            db.query(IncidentUpdate)
+            .filter(IncidentUpdate.incident_id.in_(incident_ids))
+            .order_by(IncidentUpdate.created_at.desc())
+            .all()
+        )
+
+    for event in events:
+        items.append(
+            {
+                "occurred_at": event.created_at,
+                "kind": "shipment_event",
+                "code": event.event_type or "shipment_event",
+                "status": None,
+                "message": None,
+                "relay_id": event.relay_id,
+                "incident_id": None,
+                "extra": event.extra,
+            }
+        )
+    for incident in incidents:
+        items.append(
+            {
+                "occurred_at": incident.created_at,
+                "kind": "incident",
+                "code": incident.incident_type or "incident",
+                "status": incident.status,
+                "message": incident.description,
+                "relay_id": None,
+                "incident_id": incident.id,
+                "extra": incident.extra,
+            }
+        )
+    for update in incident_updates:
+        items.append(
+            {
+                "occurred_at": update.created_at,
+                "kind": "incident_update",
+                "code": "incident_update",
+                "status": None,
+                "message": update.message,
+                "relay_id": None,
+                "incident_id": update.incident_id,
+                "extra": None,
+            }
+        )
+
+    items.sort(key=lambda row: row["occurred_at"], reverse=True)
+    return items
+
+
+def auto_detect_stagnation_incidents(db: Session, *, limit: int = 200) -> dict:
+    open_status_exists = db.query(IncidentStatus.code).filter(IncidentStatus.code == "open").first()
+    if not open_status_exists:
+        raise ValueError("Incident status 'open' is not configured")
+
+    limit = max(1, min(limit, 500))
+    candidates = (
+        db.query(Shipment)
+        .filter(Shipment.status.in_(list(ETA_STAGNATION_THRESHOLDS_HOURS.keys())))
+        .order_by(Shipment.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+    created = 0
+    skipped_existing = 0
+    now = datetime.now(UTC)
+    for shipment in candidates:
+        threshold_hours = ETA_STAGNATION_THRESHOLDS_HOURS.get(shipment.status or "created", 12)
+        last_event_at = (
+            db.query(func.max(ShipmentEvent.created_at))
+            .filter(ShipmentEvent.shipment_id == shipment.id)
+            .scalar()
+        ) or shipment.created_at or now
+        stagnation_hours = max(0, int((now - last_event_at).total_seconds() // 3600))
+        if stagnation_hours <= threshold_hours:
+            continue
+
+        existing = (
+            db.query(Incident.id)
+            .filter(
+                Incident.shipment_id == shipment.id,
+                Incident.incident_type == "delayed",
+                Incident.status.in_(["open", "investigating"]),
+            )
+            .first()
+        )
+        if existing:
+            skipped_existing += 1
+            continue
+
+        db.add(
+            Incident(
+                shipment_id=shipment.id,
+                incident_type="delayed",
+                description=(
+                    "Auto-detected operational stagnation: "
+                    f"{stagnation_hours}h in status '{shipment.status}' (threshold {threshold_hours}h)."
+                ),
+                status="open",
+                extra={
+                    "auto_detect": "stagnation",
+                    "stagnation_hours": stagnation_hours,
+                    "threshold_hours": threshold_hours,
+                    "status": shipment.status,
+                },
+            )
+        )
+        created += 1
+
+    if created > 0:
+        log_action(db, entity="incidents", action="auto_detect_stagnation")
+    db.commit()
+    return {
+        "examined": len(candidates),
+        "created": created,
+        "skipped_existing": skipped_existing,
+    }
+
+
+def get_my_shipments_dashboard(db: Session, current_user: User) -> dict:
+    now = datetime.now(UTC)
+    since_30d = now - timedelta(days=30)
+
+    sent_filter = or_(
+        Shipment.sender_id == current_user.id,
+        Shipment.sender_phone == current_user.phone_e164,
+    )
+    received_filter = Shipment.receiver_phone == current_user.phone_e164
+
+    base_query = db.query(Shipment)
+    if current_user.user_type in {UserTypeEnum.customer, UserTypeEnum.business}:
+        base_query = base_query.filter(or_(sent_filter, received_filter))
+    else:
+        base_query = _apply_visibility_scope(base_query, current_user)
+
+    total = base_query.count()
+    sent = base_query.filter(sent_filter).count()
+    received = base_query.filter(received_filter).count()
+    delivered = base_query.filter(Shipment.status == "delivered").count()
+    in_progress = base_query.filter(
+        Shipment.status.in_(["created", "ready_for_pickup", "picked_up", "in_transit", "arrived_at_relay"])
+    ).count()
+    delayed_risk = base_query.filter(
+        Shipment.created_at <= now - timedelta(hours=48),
+        Shipment.status.in_(["picked_up", "in_transit", "arrived_at_relay", "ready_for_pickup"]),
+    ).count()
+    last_30d_created = base_query.filter(Shipment.created_at >= since_30d).count()
+
+    return {
+        "total": total,
+        "sent": sent,
+        "received": received,
+        "in_progress": in_progress,
+        "delivered": delivered,
+        "delayed_risk": delayed_risk,
+        "last_30d_created": last_30d_created,
+    }

@@ -13,6 +13,8 @@ class RelayPoint(Base):
     relay_code: Mapped[str | None] = mapped_column(String(30), unique=True)
     name: Mapped[str | None] = mapped_column(String(180))
     type: Mapped[str | None] = mapped_column(String(30))
+    province_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.provinces.id"))
+    commune_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.communes.id"))
     address_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.addresses.id"))
     opening_hours: Mapped[str | None] = mapped_column(String(120))
     storage_capacity: Mapped[int | None] = mapped_column(Integer)

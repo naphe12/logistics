@@ -9,10 +9,10 @@ router = APIRouter(prefix="/ussd", tags=["ussd"])
 
 @router.post("", response_class=PlainTextResponse)
 def ussd_endpoint(
-    sessionId: str = Form(...),
-    serviceCode: str = Form(...),
-    phoneNumber: str = Form(...),
-    text: str = Form(""),
+    sessionId: str = Form(..., min_length=1, max_length=120),
+    serviceCode: str = Form(..., min_length=1, max_length=32),
+    phoneNumber: str = Form(..., min_length=8, max_length=20),
+    text: str = Form("", max_length=512),
     db: Session = Depends(get_db),
 ):
     return handle_ussd(db, sessionId, serviceCode, phoneNumber, text)

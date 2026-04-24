@@ -3,7 +3,7 @@ from decimal import Decimal
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, ForeignKey, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -22,6 +22,7 @@ class PaymentTransaction(Base):
     external_ref: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.payment_statuses.code"))
     failure_reason: Mapped[str | None] = mapped_column(String(255))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
