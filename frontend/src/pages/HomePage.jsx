@@ -49,10 +49,14 @@ export default function HomePage() {
             <h1 className="home-title">LOGIX</h1>
           </div>
           <p className="home-subtitle">
-            Connecter vos expeditions, vos equipes et vos clients dans une seule experience fluide.
+            Rapprochez vos proches, vos clients et vos operations avec une logistique fiable, simple et
+            humaine.
           </p>
           <div className="home-cta-row">
-            <Link to="/auth" className="button-link">
+            <Link to="/auth?mode=register" className="button-link">
+              Creer un compte
+            </Link>
+            <Link to="/auth" className="button-link button-ghost">
               Connexion
             </Link>
           </div>
