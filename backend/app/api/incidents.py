@@ -9,6 +9,7 @@ from app.enums import UserTypeEnum
 from app.models.users import User
 from app.schemas.incidents import (
     ClaimCreate,
+    ClaimOpsStatsOut,
     ClaimListPageOut,
     ClaimOut,
     ClaimUpdateStatusRequest,
@@ -32,6 +33,7 @@ from app.services.incident_service import (
     create_incident,
     get_incident,
     get_incident_dashboard,
+    get_claims_ops_stats,
     get_incident_timeline,
     list_claims,
     list_claims_page,
@@ -142,6 +144,15 @@ def list_claims_page_endpoint(
         offset=offset,
         limit=limit,
     )
+
+
+@router.get("/claims/stats", response_model=ClaimOpsStatsOut)
+def claims_ops_stats_endpoint(
+    stale_hours: int = Query(default=24, ge=1, le=720),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.agent, UserTypeEnum.hub)),
+):
+    return get_claims_ops_stats(db, stale_hours=stale_hours)
 
 
 @router.get("/dashboard", response_model=IncidentDashboardOut)

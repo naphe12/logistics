@@ -98,6 +98,7 @@ INSURANCE_MAX_COVERAGE_BIF = float(os.getenv("INSURANCE_MAX_COVERAGE_BIF", "1000
 INSURANCE_LOSS_COVERAGE_RATE = float(os.getenv("INSURANCE_LOSS_COVERAGE_RATE", "0.50"))
 INSURANCE_DAMAGE_COVERAGE_RATE = float(os.getenv("INSURANCE_DAMAGE_COVERAGE_RATE", "0.30"))
 INSURANCE_CLAIM_WINDOW_HOURS = int(os.getenv("INSURANCE_CLAIM_WINDOW_HOURS", "48"))
+INSURANCE_CLAIM_REVIEW_SLA_HOURS = int(os.getenv("INSURANCE_CLAIM_REVIEW_SLA_HOURS", "24"))
 INSURANCE_REQUIRE_PROOF = parse_bool_env("INSURANCE_REQUIRE_PROOF", default=True)
 INSURANCE_PROHIBITED_ITEMS = parse_csv_env(
     "INSURANCE_PROHIBITED_ITEMS",
@@ -123,4 +124,10 @@ GEO_ACTIVE_PROVINCES = parse_csv_env(
 def is_dev_login_allowed() -> bool:
     # Reload local .env to avoid stale behavior during dev when values change.
     load_local_env_file()
-    return parse_bool_env("AUTH_ALLOW_DEV_LOGIN", default=False)
+    raw = os.getenv("AUTH_ALLOW_DEV_LOGIN")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    # Safe dev fallback: if no explicit flag is set, allow direct login only in dev-like app versions.
+    app_version = os.getenv("APP_VERSION", "dev").strip().lower()
+    return app_version in {"dev", "development", "local"}

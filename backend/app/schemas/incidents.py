@@ -125,3 +125,16 @@ class ClaimListPageOut(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class ClaimOpsStatsOut(BaseModel):
+    total: int
+    pending: int
+    pending_over_sla: int
+    stale_hours: int
+    by_status: dict[str, int]
+    by_type: dict[str, int]
+    requested_total: Decimal
+    approved_total: Decimal
+    paid_total: Decimal
+    avg_resolution_hours: float | None = None

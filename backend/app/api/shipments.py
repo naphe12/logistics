@@ -26,6 +26,7 @@ from app.schemas.shipments import (
     ShipmentExtraUpdate,
     ShipmentOverviewStats,
     ShipmentInsuranceQuoteOut,
+    ShipmentInsurancePolicyOut,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
 )
@@ -48,6 +49,7 @@ from app.services.shipment_service import (
     get_my_shipments_dashboard,
     get_shipment_eta,
     get_insurance_quote,
+    get_insurance_policy_summary,
     update_shipment_extra,
     update_shipment_status,
     ShipmentNotFoundError,
@@ -113,6 +115,21 @@ def shipment_insurance_quote_endpoint(
         declared_value=declared_value,
         insurance_opt_in=insurance_opt_in,
     )
+
+
+@router.get("/insurance/policy", response_model=ShipmentInsurancePolicyOut)
+def shipment_insurance_policy_endpoint(
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    return get_insurance_policy_summary()
 
 
 @router.get("", response_model=list[ShipmentOut])

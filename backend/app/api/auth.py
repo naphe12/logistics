@@ -41,7 +41,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not is_dev_login_allowed():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Direct login disabled. Use OTP flow.",
+            detail="Direct login disabled. Use OTP flow or enable AUTH_ALLOW_DEV_LOGIN in environment.",
         )
     token = login_or_create(db, payload.phone_e164)
     return TokenResponse(access_token=token)

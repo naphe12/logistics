@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.config import (
+    INSURANCE_CLAIM_REVIEW_SLA_HOURS,
     INSURANCE_CLAIM_WINDOW_HOURS,
     INSURANCE_DAMAGE_COVERAGE_RATE,
     INSURANCE_ENABLED,
@@ -52,6 +53,19 @@ class InsuranceQuote:
     max_coverage: Decimal
 
 
+@dataclass(frozen=True)
+class InsurancePolicy:
+    enabled: bool
+    premium_rate: Decimal
+    max_coverage_bif: Decimal
+    claim_window_hours: int
+    claim_review_sla_hours: int
+    loss_coverage_rate: Decimal
+    damage_coverage_rate: Decimal
+    require_proof: bool
+    prohibited_items: list[str]
+
+
 def compute_insurance_quote(*, declared_value: Decimal | None, insurance_opt_in: bool) -> InsuranceQuote:
     value = max(_d(declared_value), ZERO)
     premium_rate = max(_d(INSURANCE_PREMIUM_RATE), ZERO)
@@ -67,6 +81,20 @@ def compute_insurance_quote(*, declared_value: Decimal | None, insurance_opt_in:
         coverage_amount=_quantize_money(coverage_amount),
         premium_rate=premium_rate,
         max_coverage=max_coverage,
+    )
+
+
+def get_insurance_policy() -> InsurancePolicy:
+    return InsurancePolicy(
+        enabled=INSURANCE_ENABLED,
+        premium_rate=max(_d(INSURANCE_PREMIUM_RATE), ZERO),
+        max_coverage_bif=max(_d(INSURANCE_MAX_COVERAGE_BIF), ZERO),
+        claim_window_hours=max(1, int(INSURANCE_CLAIM_WINDOW_HOURS)),
+        claim_review_sla_hours=max(1, int(INSURANCE_CLAIM_REVIEW_SLA_HOURS)),
+        loss_coverage_rate=max(_d(INSURANCE_LOSS_COVERAGE_RATE), ZERO),
+        damage_coverage_rate=max(_d(INSURANCE_DAMAGE_COVERAGE_RATE), ZERO),
+        require_proof=INSURANCE_REQUIRE_PROOF,
+        prohibited_items=[item for item in INSURANCE_PROHIBITED_ITEMS if item],
     )
 
 

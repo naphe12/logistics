@@ -16,7 +16,7 @@ from app.services.notification_service import queue_and_send_sms
 from app.realtime.events import emit_shipment_status_update
 from app.enums import UserTypeEnum
 from app.models.users import User
-from app.services.insurance_service import compute_insurance_quote
+from app.services.insurance_service import compute_insurance_quote, get_insurance_policy
 
 
 class ShipmentNotFoundError(Exception):
@@ -152,6 +152,21 @@ def get_insurance_quote(
         "insurance_fee": quote.insurance_fee,
         "coverage_amount": quote.coverage_amount,
         "max_coverage": quote.max_coverage,
+    }
+
+
+def get_insurance_policy_summary() -> dict[str, object]:
+    policy = get_insurance_policy()
+    return {
+        "enabled": policy.enabled,
+        "premium_rate": policy.premium_rate,
+        "max_coverage_bif": policy.max_coverage_bif,
+        "claim_window_hours": policy.claim_window_hours,
+        "claim_review_sla_hours": policy.claim_review_sla_hours,
+        "loss_coverage_rate": policy.loss_coverage_rate,
+        "damage_coverage_rate": policy.damage_coverage_rate,
+        "require_proof": policy.require_proof,
+        "prohibited_items": policy.prohibited_items,
     }
 
 

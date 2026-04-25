@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from app.schemas.incidents import ClaimCreate, IncidentCreate
 from app.services.audit_service import log_action
 from app.services.insurance_service import InsuranceValidationError, validate_claim_policy
+from app.config import INSURANCE_CLAIM_REVIEW_SLA_HOURS
 
 
 class IncidentError(Exception):
@@ -484,4 +485,81 @@ def auto_escalate_stale_incidents(
         "skipped": skipped,
         "stale_hours": stale_hours,
         "dry_run": dry_run,
+    }
+
+
+def get_claims_ops_stats(
+    db: Session,
+    *,
+    stale_hours: int = INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+) -> dict:
+    stale_hours = max(1, min(int(stale_hours), 24 * 30))
+    cutoff = datetime.now(UTC) - timedelta(hours=stale_hours)
+
+    total = db.query(Claim).count()
+    pending = db.query(Claim).filter(Claim.status.in_(["submitted", "reviewing"])).count()
+    pending_over_sla = (
+        db.query(Claim)
+        .filter(
+            Claim.status.in_(["submitted", "reviewing"]),
+            Claim.created_at <= cutoff,
+        )
+        .count()
+    )
+
+    status_rows = (
+        db.query(func.coalesce(Claim.status, "unknown"), func.count(Claim.id))
+        .group_by(Claim.status)
+        .all()
+    )
+    by_status = {str(status): int(count) for status, count in status_rows}
+
+    type_rows = (
+        db.query(func.coalesce(Claim.claim_type, "unknown"), func.count(Claim.id))
+        .group_by(Claim.claim_type)
+        .all()
+    )
+    by_type = {str(claim_type): int(count) for claim_type, count in type_rows}
+
+    requested_total = (
+        db.query(func.coalesce(func.sum(Claim.amount_requested), 0))
+        .scalar()
+        or 0
+    )
+    approved_total = (
+        db.query(func.coalesce(func.sum(Claim.amount_approved), 0))
+        .scalar()
+        or 0
+    )
+    paid_total = (
+        db.query(func.coalesce(func.sum(Claim.amount_approved), 0))
+        .filter(Claim.status == "paid")
+        .scalar()
+        or 0
+    )
+
+    resolution_rows = (
+        db.query(Claim)
+        .filter(Claim.status.in_(["rejected", "paid"]), Claim.updated_at.is_not(None))
+        .all()
+    )
+    durations = []
+    for row in resolution_rows:
+        created_at = row.created_at
+        updated_at = row.updated_at
+        if created_at and updated_at and updated_at >= created_at:
+            durations.append((updated_at - created_at).total_seconds() / 3600)
+    avg_resolution_hours = round(sum(durations) / len(durations), 2) if durations else None
+
+    return {
+        "total": int(total),
+        "pending": int(pending),
+        "pending_over_sla": int(pending_over_sla),
+        "stale_hours": int(stale_hours),
+        "by_status": by_status,
+        "by_type": by_type,
+        "requested_total": requested_total,
+        "approved_total": approved_total,
+        "paid_total": paid_total,
+        "avg_resolution_hours": avg_resolution_hours,
     }

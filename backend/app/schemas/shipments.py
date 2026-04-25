@@ -210,3 +210,15 @@ class ShipmentInsuranceQuoteOut(BaseModel):
     insurance_fee: Decimal
     coverage_amount: Decimal
     max_coverage: Decimal
+
+
+class ShipmentInsurancePolicyOut(BaseModel):
+    enabled: bool
+    premium_rate: Decimal
+    max_coverage_bif: Decimal
+    claim_window_hours: int
+    claim_review_sla_hours: int
+    loss_coverage_rate: Decimal
+    damage_coverage_rate: Decimal
+    require_proof: bool
+    prohibited_items: list[str]
