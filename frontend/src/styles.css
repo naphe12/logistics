@@ -930,6 +930,16 @@ button:disabled {
   min-height: calc(100vh - 44px);
   display: grid;
   align-items: start;
+  padding: clamp(10px, 2.2vw, 18px);
+  border-radius: 36px;
+  border: 2px solid rgba(71, 152, 220, 0.5);
+  background:
+    radial-gradient(380px 160px at 12% 5%, rgba(74, 163, 232, 0.24), transparent 66%),
+    radial-gradient(420px 200px at 88% 2%, rgba(50, 128, 194, 0.2), transparent 65%),
+    linear-gradient(155deg, rgba(20, 70, 111, 0.22), rgba(46, 118, 176, 0.18));
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 226, 255, 0.28),
+    0 18px 36px rgba(21, 63, 100, 0.2);
 }
 
 .public-home-banner {
@@ -940,6 +950,82 @@ button:disabled {
 .auth-wrap {
   display: grid;
   gap: 10px;
+}
+
+.auth-modern {
+  width: min(640px, 100%);
+}
+
+.auth-modern-panel {
+  border-radius: 28px;
+  border: 1px solid #cfe0ee;
+  background:
+    radial-gradient(220px 120px at -10% -12%, rgba(78, 154, 219, 0.15), transparent 60%),
+    radial-gradient(220px 120px at 110% 0%, rgba(253, 215, 137, 0.16), transparent 60%),
+    linear-gradient(170deg, #ffffff 0%, #f5f9fe 100%);
+  box-shadow: 0 22px 44px rgba(16, 57, 93, 0.16);
+}
+
+.auth-modern-brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-modern-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.auth-modern-brand h2 {
+  margin: 0;
+  font-family: 'Sora', 'Manrope', sans-serif;
+  font-size: 2rem;
+  letter-spacing: 0.08em;
+}
+
+.auth-modern-subtitle {
+  margin: 8px 0 14px;
+  text-align: center;
+  color: #3f5d77;
+}
+
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 5px;
+  border-radius: 12px;
+  border: 1px solid #d5e3f0;
+  background: #eff6fd;
+  margin-bottom: 12px;
+}
+
+.auth-mode-btn {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #1d4467;
+  box-shadow: none;
+}
+
+.auth-mode-btn.active {
+  background: #fff;
+  border-color: #cddfeb;
+  box-shadow: 0 5px 12px rgba(16, 57, 93, 0.1);
+}
+
+.auth-modern-footnote {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 0.86rem;
+}
+
+.auth-modern-footnote a {
+  color: #245d8b;
+  text-decoration: none;
 }
 
 .auth-panel .status-line {
@@ -1024,6 +1110,10 @@ button:disabled {
     padding: 16px;
   }
 
+  .public-home {
+    border-radius: 20px;
+  }
+
   .hero-actions {
     flex-direction: column;
   }
@@ -1052,5 +1142,9 @@ button:disabled {
 
   .home-spotlight {
     min-height: 420px;
+  }
+
+  .auth-mode-switch {
+    grid-template-columns: 1fr;
   }
 }
