@@ -1,6 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import logisticsHero from '../assets/logistics-hero.svg'
 
 export default function HomePage() {
   const { dashboardRole, isAuthenticated } = useAuth()
@@ -44,14 +43,18 @@ export default function HomePage() {
   if (isPublicLanding) {
     return (
       <section className="public-home">
-        <article className="public-home-banner">
-          <div className="public-home-brand">
-            <h1>LOGIX</h1>
-            <div className="public-home-actions">
-              <Link to="/auth" className="button-link">
-                Connexion
-              </Link>
-            </div>
+        <article className="home-spotlight">
+          <div className="home-logo-row">
+            <img src="/favicon.svg" alt="Logix" className="home-logo spin-slow" />
+            <h1 className="home-title">LOGIX</h1>
+          </div>
+          <p className="home-subtitle">
+            Plateforme de livraison moderne pour les clients, agents et administrateurs.
+          </p>
+          <div className="home-cta-row">
+            <Link to="/auth" className="button-link">
+              Connexion
+            </Link>
           </div>
         </article>
       </section>
@@ -60,27 +63,39 @@ export default function HomePage() {
 
   return (
     <section className="dashboard-home">
-      <article className="hero-card">
-        <div className="hero-grid">
-          <div>
-            <p className="eyebrow hero-eyebrow">{roleHome.eyebrow}</p>
-            <h2>{roleHome.title}</h2>
-            <p>{roleHome.description}</p>
-            <div className="hero-actions">
-              <Link to={roleHome.actions[0].to} className="button-link">
-                {roleHome.actions[0].label}
-              </Link>
-              <Link to={roleHome.actions[1].to} className="button-link button-ghost">
-                {roleHome.actions[1].label}
-              </Link>
-            </div>
-          </div>
-          <img
-            src={logisticsHero}
-            alt="Illustration operations logistiques"
-            className="hero-image"
-            loading="lazy"
-          />
+      <article className="home-spotlight">
+        <div className="home-logo-row">
+          <img src="/favicon.svg" alt="Logix" className="home-logo spin-slow" />
+          <h1 className="home-title">LOGIX</h1>
+        </div>
+        <p className="eyebrow hero-eyebrow">{roleHome.eyebrow}</p>
+        <h2>{roleHome.title}</h2>
+        <p className="home-subtitle">{roleHome.description}</p>
+        <div className="home-cta-row">
+          <Link to={roleHome.actions[0].to} className="button-link">
+            {roleHome.actions[0].label}
+          </Link>
+          <Link to={roleHome.actions[1].to} className="button-link button-ghost">
+            {roleHome.actions[1].label}
+          </Link>
+        </div>
+      </article>
+
+      <article className="panel home-simple-card">
+        <p className="eyebrow">Acces Rapide</p>
+        <h3>Navigation principale</h3>
+        <div className="home-simple-links">
+          <Link to={roleHome.actions[0].to} className="button-link">
+            {roleHome.actions[0].label}
+          </Link>
+          <Link to={roleHome.actions[1].to} className="button-link button-ghost">
+            {roleHome.actions[1].label}
+          </Link>
+          {dashboardRole === 'admin' ? (
+            <Link to="/backoffice" className="button-link button-ghost">
+              Backoffice
+            </Link>
+          ) : null}
         </div>
       </article>
     </section>
