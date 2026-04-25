@@ -9,9 +9,9 @@ export default function HomePage() {
   const homeByRole = {
     client: {
       eyebrow: 'Client Experience',
-      title: 'Envoyer et suivre vos colis en confiance',
+      title: "Connecter vos envois a tout le pays",
       description:
-        'Creation rapide, assurance optionnelle, suivi temps reel et reclamations pilotees avec SLA.',
+        "Envoyez, suivez et gerez vos colis en toute transparence avec une experience moderne inspiree des meilleurs standards digitaux.",
       actions: [
         { to: '/shipments', label: 'Creer un envoi' },
         { to: '/tracking', label: 'Suivre un colis' },
@@ -19,9 +19,9 @@ export default function HomePage() {
     },
     agent: {
       eyebrow: 'Field Ops',
-      title: 'Operations terrain et remise securisee',
+      title: 'Piloter chaque livraison avec precision',
       description:
-        'Mise a jour statuts, scans de remise, verification codes et coordination transport en temps reel.',
+        "Centralisez vos operations terrain, fluidifiez la remise et gardez une visibilite totale sur chaque etape.",
       actions: [
         { to: '/tracking', label: 'Operations live' },
         { to: '/transport', label: 'Gestion transport' },
@@ -29,9 +29,9 @@ export default function HomePage() {
     },
     admin: {
       eyebrow: 'Control Tower',
-      title: 'Pilotage reseau, SLA et performance',
+      title: 'Orchestrer le reseau logistique en confiance',
       description:
-        'Vue globale operations, alerting, performance claims, finance assurance et orchestration des equipes.',
+        "Supervisez votre reseau, votre qualite de service et vos equipes depuis une interface claire, rapide et orientee impact.",
       actions: [
         { to: '/backoffice', label: 'Ouvrir backoffice' },
         { to: '/incidents', label: 'SLA incidents/claims' },
@@ -49,7 +49,7 @@ export default function HomePage() {
             <h1 className="home-title">LOGIX</h1>
           </div>
           <p className="home-subtitle">
-            Plateforme de livraison moderne pour les clients, agents et administrateurs.
+            Connecter vos expeditions, vos equipes et vos clients dans une seule experience fluide.
           </p>
           <div className="home-cta-row">
             <Link to="/auth" className="button-link">

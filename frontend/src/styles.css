@@ -257,15 +257,19 @@ a {
 .home-spotlight {
   position: relative;
   text-align: center;
-  padding: 28px 24px;
-  border-radius: 30px;
+  padding: clamp(34px, 8vh, 74px) clamp(22px, 4vw, 56px);
+  min-height: clamp(360px, 56vh, 640px);
+  border-radius: 34px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background:
-    radial-gradient(260px 140px at 12% 8%, rgba(255, 255, 255, 0.2), transparent 60%),
-    radial-gradient(280px 160px at 100% 0%, rgba(253, 215, 137, 0.18), transparent 60%),
-    linear-gradient(135deg, #15436c 0%, #246ba5 58%, #3b8fc8 100%);
+    radial-gradient(340px 180px at 12% 8%, rgba(255, 255, 255, 0.24), transparent 60%),
+    radial-gradient(380px 210px at 100% 0%, rgba(253, 215, 137, 0.2), transparent 62%),
+    linear-gradient(135deg, #123d62 0%, #236ca5 54%, #3f97d5 100%);
   color: #eef7ff;
-  box-shadow: var(--glow-brand);
+  box-shadow: 0 28px 56px rgba(14, 49, 82, 0.3);
+  display: grid;
+  align-content: center;
+  gap: 8px;
 }
 
 .home-spotlight h2 {
@@ -293,21 +297,22 @@ a {
 .home-title {
   margin: 0;
   font-family: 'Sora', 'Manrope', sans-serif;
-  font-size: clamp(2rem, 5vw, 3rem);
+  font-size: clamp(2.2rem, 6vw, 4rem);
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #fff;
 }
 
 .home-subtitle {
-  margin: 0 auto;
-  max-width: 740px;
+  margin: 4px auto 0;
+  max-width: 860px;
   color: #dfeeff;
-  font-size: 1rem;
+  font-size: clamp(1rem, 1.6vw, 1.26rem);
+  line-height: 1.55;
 }
 
 .home-cta-row {
-  margin-top: 16px;
+  margin-top: 20px;
   display: flex;
   justify-content: center;
   gap: 10px;
@@ -1040,5 +1045,9 @@ button:disabled {
   .home-cta-row,
   .home-simple-links {
     flex-direction: column;
+  }
+
+  .home-spotlight {
+    min-height: 420px;
   }
 }
