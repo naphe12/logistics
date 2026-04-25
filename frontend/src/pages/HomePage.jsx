@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { listPublicRelays, publicEstimateShipment } from '../api/client'
+import { getBackofficeS1OpsKpis, listPublicRelays, publicEstimateShipment } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 export default function HomePage() {
-  const { dashboardRole, isAuthenticated } = useAuth()
+  const { dashboardRole, isAuthenticated, token, userType } = useAuth()
   const location = useLocation()
   const isPublicLanding = location.pathname === '/' && !isAuthenticated
   const [publicRelays, setPublicRelays] = useState([])
   const [estimateError, setEstimateError] = useState('')
   const [estimateResult, setEstimateResult] = useState(null)
+  const [s1Kpis, setS1Kpis] = useState(null)
   const [estimateForm, setEstimateForm] = useState({
     origin_relay_id: '',
     destination_relay_id: '',
@@ -51,12 +52,122 @@ export default function HomePage() {
   }
   const roleHome = homeByRole[dashboardRole] || homeByRole.client
 
+  function pct(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '--'
+    return `${value.toFixed(2)}%`
+  }
+
+  const kpis = [
+    {
+      label: 'On-time Rate',
+      value: pct(s1Kpis?.on_time_rate),
+      delta: 'S1',
+      tone: 'up',
+    },
+    {
+      label: 'Incident Rate',
+      value: pct(s1Kpis?.incident_rate),
+      delta: 'S1',
+      tone: 'down',
+    },
+    {
+      label: 'Scan Compliance',
+      value: pct(s1Kpis?.scan_compliance),
+      delta: 'S1',
+      tone: 'up',
+    },
+    {
+      label: 'Shipments (window)',
+      value: typeof s1Kpis?.shipments_created === 'number' ? String(s1Kpis.shipments_created) : '--',
+      delta: `${s1Kpis?.window_hours || 168}h`,
+      tone: 'up',
+    },
+    {
+      label: 'Incidents (window)',
+      value: typeof s1Kpis?.incident_count === 'number' ? String(s1Kpis.incident_count) : '--',
+      delta: `${s1Kpis?.window_hours || 168}h`,
+      tone: 'down',
+    },
+  ]
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthlyTime = [320, 410, 360, 540, 430, 610, 470, 630, 500, 300, 700, 580]
+  const monthlyRoute = [280, 340, 290, 320, 520, 410, 550, 470, 560, 530, 460, 490]
+  const lineByCountry = [
+    { name: 'Burundi', values: [110, 90, 130, 124, 118, 140, 126, 134, 129, 120, 112, 127], color: '#28a36a' },
+    { name: 'Rwanda', values: [130, 101, 142, 139, 126, 131, 137, 128, 133, 141, 119, 149], color: '#2b70c9' },
+    { name: 'Tanzania', values: [123, 115, 136, 147, 143, 132, 139, 135, 127, 138, 124, 146], color: '#d49a23' },
+    { name: 'Kenya', values: [116, 88, 129, 121, 108, 125, 111, 126, 130, 142, 118, 151], color: '#2f3d8d' },
+  ]
+  const chartMax = Math.max(...monthlyTime, ...monthlyRoute, 1)
+  const lineMax = Math.max(...lineByCountry.flatMap((s) => s.values), 1)
+  const routePoints = monthlyRoute
+    .map((v, i) => {
+      const x = (i / (monthlyRoute.length - 1)) * 100
+      const y = 100 - (v / chartMax) * 100
+      return `${x},${y}`
+    })
+    .join(' ')
+  const countryPoints = lineByCountry.map((series) =>
+    series.values
+      .map((v, i) => {
+        const x = (i / (series.values.length - 1)) * 100
+        const y = 100 - (v / lineMax) * 100
+        return `${x},${y}`
+      })
+      .join(' ')
+  )
+  const ongoingDeliveries = [
+    {
+      shipmentNo: '#001234ABCD',
+      from: '87 Wern Du Lane',
+      to: '15 Vicar Lane',
+      status: 'On the way',
+      eta: '15 min',
+      active: true,
+    },
+    {
+      shipmentNo: '#001234ABCE',
+      from: '40 Broomfield Place',
+      to: '44 Helland Bridge',
+      status: 'Checkpoint',
+      eta: '32 min',
+      active: false,
+    },
+    {
+      shipmentNo: '#001234ABCF',
+      from: '19 Norfield Town',
+      to: '8 Newmarket Street',
+      status: 'Preparing',
+      eta: '54 min',
+      active: false,
+    },
+  ]
+  const trackingRows = [
+    { id: 'TRK-1092', category: 'Electronic', distance: '60.41 km', eta: '1h 20m' },
+    { id: 'TRK-1093', category: 'Fashion', distance: '22.04 km', eta: '45m' },
+    { id: 'TRK-1094', category: 'Retail', distance: '11.16 km', eta: '19m' },
+  ]
+
   useEffect(() => {
     if (!isPublicLanding) return
     listPublicRelays()
       .then((rows) => setPublicRelays(Array.isArray(rows) ? rows : []))
       .catch(() => setPublicRelays([]))
   }, [isPublicLanding])
+
+  useEffect(() => {
+    if (location.pathname !== '/dashboard') return
+    if (!token) return
+    const isOpsAdmin = userType === 'admin' || userType === 'hub'
+    if (!isOpsAdmin) {
+      setS1Kpis(null)
+      return
+    }
+
+    getBackofficeS1OpsKpis(token, 168)
+      .then((rows) => setS1Kpis(rows || null))
+      .catch(() => setS1Kpis(null))
+  }, [location.pathname, token, userType])
 
   async function onEstimateSubmit(e) {
     e.preventDefault()
@@ -166,7 +277,195 @@ export default function HomePage() {
     )
   }
 
-  return (
+  return location.pathname === '/dashboard' ? (
+    <section className="pro-dashboard">
+      <article className="pro-head">
+        <div>
+          <p className="eyebrow">Operations Dashboard</p>
+          <h2>Control Tower</h2>
+        </div>
+        <div className="pro-switch">
+          <button type="button" className="active">
+            Overview
+          </button>
+          <button type="button">Tracking</button>
+        </div>
+      </article>
+
+      <section className="pro-kpis">
+        {kpis.map((kpi) => (
+          <article key={kpi.label} className="pro-kpi">
+            <p>{kpi.label}</p>
+            <h3>{kpi.value}</h3>
+            <span className={kpi.tone === 'up' ? 'delta up' : 'delta down'}>Than last month {kpi.delta}</span>
+          </article>
+        ))}
+      </section>
+
+      <section className="pro-analytics-grid">
+        <article className="pro-chart-card">
+          <header>
+            <h3>Avg Delivery Time (hours) & Route (km)</h3>
+            <div className="legend-inline">
+              <span className="legend-dot legend-time">Time</span>
+              <span className="legend-dot legend-route">Route</span>
+            </div>
+          </header>
+          <div className="barline-chart">
+            <div className="bars">
+              {monthlyTime.map((v, i) => (
+                <div key={monthLabels[i]} className="bar-col">
+                  <div className="bar" style={{ height: `${(v / chartMax) * 100}%` }} />
+                  <small>{monthLabels[i]}</small>
+                </div>
+              ))}
+            </div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <polyline points={routePoints} />
+            </svg>
+          </div>
+        </article>
+
+        <article className="pro-fleet-card">
+          <h3>Fleet Status</h3>
+          <div className="fleet-gauge-wrap">
+            <div className="fleet-gauge">
+              <span>96.6%</span>
+            </div>
+          </div>
+          <p className="fleet-caption">Fleet Efficiency</p>
+          <div className="fleet-stats">
+            <div className="fleet-row">
+              <span>Total Fleet</span>
+              <strong>64</strong>
+            </div>
+            <div className="fleet-row">
+              <span>On the Move</span>
+              <strong>62</strong>
+            </div>
+            <div className="fleet-row">
+              <span>In Maintenance</span>
+              <strong>4</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section className="pro-analytics-grid">
+        <article className="pro-chart-card">
+          <header>
+            <h3>Avg Delivery Time (hours) & Route (km)</h3>
+            <div className="legend-inline legend-wide">
+              {lineByCountry.map((series) => (
+                <span key={series.name} className="legend-dot" style={{ '--dot': series.color }}>
+                  {series.name}
+                </span>
+              ))}
+            </div>
+          </header>
+          <div className="multi-line-chart">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              {countryPoints.map((points, idx) => (
+                <polyline key={lineByCountry[idx].name} points={points} style={{ '--line': lineByCountry[idx].color }} />
+              ))}
+            </svg>
+            <div className="month-strip">
+              {monthLabels.map((m) => (
+                <small key={m}>{m}</small>
+              ))}
+            </div>
+          </div>
+        </article>
+
+        <aside className="pro-side-metrics">
+          <article className="side-metric">
+            <div className="metric-icon clock" />
+            <div>
+              <strong>25 Min</strong>
+              <p>Avg Loading Time</p>
+            </div>
+          </article>
+          <article className="side-metric">
+            <div className="metric-icon weight" />
+            <div>
+              <strong>10 tons</strong>
+              <p>Avg Loading Weight</p>
+            </div>
+          </article>
+        </aside>
+      </section>
+
+      <section className="pro-main-grid">
+        <article className="pro-ongoing">
+          <header>
+            <h3>Ongoing delivery</h3>
+            <button type="button" className="button-secondary">
+              Filter
+            </button>
+          </header>
+          <div className="pro-ongoing-list">
+            {ongoingDeliveries.map((item) => (
+              <div key={item.shipmentNo} className={item.active ? 'delivery-card active' : 'delivery-card'}>
+                <div>
+                  <p className="mono">{item.shipmentNo}</p>
+                  <small>
+                    {item.from} to {item.to}
+                  </small>
+                </div>
+                <div className="delivery-meta">
+                  <span className="badge info">{item.status}</span>
+                  <strong>{item.eta}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="pro-route">
+          <h3>On the way</h3>
+          <div className="route-canvas">
+            <span className="dot a" />
+            <span className="dot b" />
+            <span className="dot c" />
+            <svg viewBox="0 0 260 160" aria-hidden="true">
+              <polyline points="24,120 92,48 144,98 232,38" />
+            </svg>
+          </div>
+          <div className="route-stats">
+            <div>
+              <p>Category</p>
+              <strong>Electronic</strong>
+            </div>
+            <div>
+              <p>Distance</p>
+              <strong>60.41 km</strong>
+            </div>
+            <div>
+              <p>ETA</p>
+              <strong>1h 20m</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <article className="pro-tracking">
+        <header>
+          <h3>Tracking Order</h3>
+          <input placeholder="Search tracking id..." />
+        </header>
+        <div className="pro-table">
+          {trackingRows.map((row) => (
+            <div key={row.id} className="pro-row">
+              <span className="mono">{row.id}</span>
+              <span>{row.category}</span>
+              <span>{row.distance}</span>
+              <span>{row.eta}</span>
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  ) : (
     <section className="dashboard-home">
       <article className="home-spotlight">
         <div className="home-logo-row">

@@ -31,11 +31,18 @@ from app.schemas.shipments import (
     ShipmentPriceEstimateOut,
     ShipmentPublicTrackRequest,
     ShipmentPublicTrackOut,
+    ShipmentPickupMarkRequest,
+    ShipmentRelayTransferRequest,
     ShipmentPickupSlotUpdateRequest,
     ShipmentDeliveryProofCreateRequest,
     RelayPickupForecastOut,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
+    ShipmentScheduleCreate,
+    ShipmentScheduleOut,
+    ShipmentScheduleListPage,
+    ShipmentScheduleRunResult,
+    ShipmentScheduleUpdate,
 )
 from app.services.shipment_service import (
     bulk_update_shipment_status,
@@ -60,6 +67,8 @@ from app.services.shipment_service import (
     get_insurance_policy_summary,
     get_corridor_price_estimate,
     get_public_tracking_by_shipment_no,
+    mark_shipment_picked_up,
+    transfer_shipment_between_relays,
     update_pickup_slot,
     get_relay_pickup_forecast,
     capture_delivery_proof,
@@ -68,10 +77,20 @@ from app.services.shipment_service import (
     update_shipment_status,
     ShipmentNotFoundError,
 )
+from app.services.shipment_schedule_service import (
+    ShipmentScheduleError,
+    ShipmentScheduleNotFoundError,
+    create_shipment_schedule,
+    get_shipment_schedule,
+    list_shipment_schedules,
+    run_due_shipment_schedules,
+    update_shipment_schedule,
+)
 from app.services.idempotency_service import (
     has_processed_idempotency_key,
     mark_processed_idempotency_key,
 )
+from app.services.relay_service import RelayCapacityError, RelayInventoryError, RelayNotFoundError
 from app.dependencies import get_current_user, require_roles
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
@@ -357,6 +376,116 @@ def my_shipments_dashboard_endpoint(
     ),
 ):
     return get_my_shipments_dashboard(db, current_user)
+
+
+@router.post("/schedules", response_model=ShipmentScheduleOut)
+def create_shipment_schedule_endpoint(
+    payload: ShipmentScheduleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return create_shipment_schedule(db, payload, current_user=current_user)
+    except ShipmentScheduleError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/schedules", response_model=ShipmentScheduleListPage)
+def list_shipment_schedules_endpoint(
+    active_only: bool = Query(default=False),
+    mine: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=200),
+    sort: Literal["next_run_asc", "next_run_desc", "created_desc", "created_asc"] = Query(
+        default="next_run_asc"
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    items, total = list_shipment_schedules(
+        db,
+        active_only=active_only,
+        current_user=current_user,
+        owned_only=mine,
+        offset=offset,
+        limit=limit,
+        sort=sort,
+    )
+    return ShipmentScheduleListPage(items=items, total=total, offset=offset, limit=limit)
+
+
+@router.get("/schedules/{schedule_id}", response_model=ShipmentScheduleOut)
+def get_shipment_schedule_endpoint(
+    schedule_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    row = get_shipment_schedule(db, schedule_id, current_user=current_user)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment schedule not found")
+    return row
+
+
+@router.patch("/schedules/{schedule_id}", response_model=ShipmentScheduleOut)
+def update_shipment_schedule_endpoint(
+    schedule_id: UUID,
+    payload: ShipmentScheduleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return update_shipment_schedule(db, schedule_id, payload, current_user=current_user)
+    except ShipmentScheduleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShipmentScheduleError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/schedules/run-due", response_model=ShipmentScheduleRunResult)
+def run_due_shipment_schedules_endpoint(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    return run_due_shipment_schedules(db, limit=limit)
 
 
 @router.get("/my/sla-summary", response_model=ShipmentClientSlaPage)
@@ -738,6 +867,69 @@ def update_shipment_pickup_slot_endpoint(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/{shipment_id}/pickup/mark", response_model=ShipmentOut)
+def mark_shipment_picked_up_endpoint(
+    shipment_id: UUID,
+    payload: ShipmentPickupMarkRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return mark_shipment_picked_up(
+            db,
+            shipment_id,
+            relay_id=payload.relay_id,
+            event_type=payload.event_type,
+            extra=payload.extra,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{shipment_id}/relay-transfer", response_model=ShipmentOut)
+def relay_transfer_shipment_endpoint(
+    shipment_id: UUID,
+    payload: ShipmentRelayTransferRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return transfer_shipment_between_relays(
+            db,
+            shipment_id,
+            from_relay_id=payload.from_relay_id,
+            to_relay_id=payload.to_relay_id,
+            event_type=payload.event_type,
+            extra=payload.extra,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RelayNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RelayCapacityError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RelayInventoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/{shipment_id}/delivery-proof", response_model=ShipmentOut)
 def create_shipment_delivery_proof_endpoint(
     shipment_id: UUID,
@@ -785,6 +977,8 @@ def update_shipment_status_endpoint(
         return update_shipment_status(db, shipment_id, payload)
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/{shipment_id}/extra", response_model=ShipmentOut)

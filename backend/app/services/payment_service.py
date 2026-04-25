@@ -25,6 +25,12 @@ from app.schemas.payments import PaymentCreate
 from app.services.audit_service import log_action
 from app.enums import UserTypeEnum
 from app.services.notification_service import queue_and_send_sms
+from app.services.payment_provider_service import (
+    build_provider_initiation_metadata,
+    normalize_provider,
+    provider_status_to_internal,
+    validate_supported_provider,
+)
 
 
 class PaymentError(Exception):
@@ -230,30 +236,6 @@ def _require_status_exists(db: Session, status_code: str) -> None:
         raise PaymentValidationError(f"Unknown payment status: {status_code}")
 
 
-def _provider_status_to_internal(status: str) -> str:
-    normalized = status.strip().lower()
-    mapping = {
-        "paid": "paid",
-        "success": "paid",
-        "succeeded": "paid",
-        "completed": "paid",
-        "ok": "paid",
-        "processing": "processing",
-        "pending": "pending",
-        "failed": "failed",
-        "error": "failed",
-        "declined": "failed",
-        "cancelled": "cancelled",
-        "canceled": "cancelled",
-        "expired": "failed",
-        "timeout": "failed",
-        "refunded": "refunded",
-    }
-    if normalized not in mapping:
-        raise PaymentValidationError(f"Unsupported webhook payment status: {status}")
-    return mapping[normalized]
-
-
 def _verify_webhook_signature(raw_body: bytes, signature: str) -> None:
     if not PAYMENT_WEBHOOK_SECRET:
         raise PaymentSignatureError("PAYMENT_WEBHOOK_SECRET is not configured")
@@ -324,9 +306,13 @@ def _apply_webhook_update(
             "detail": "Webhook event already processed",
         }
 
-    mapped_status = _provider_status_to_internal(status)
+    effective_provider = provider or target.provider
     if provider:
-        target.provider = provider
+        target.provider = normalize_provider(provider)
+    try:
+        mapped_status = provider_status_to_internal(effective_provider, status)
+    except ValueError as exc:
+        raise PaymentValidationError(str(exc)) from exc
     if external_ref:
         target.external_ref = external_ref
 
@@ -366,13 +352,17 @@ def create_payment(db: Session, payload: PaymentCreate) -> PaymentTransaction:
     if not shipment:
         raise PaymentValidationError("Shipment not found")
     _require_status_exists(db, "pending")
+    try:
+        provider = validate_supported_provider(payload.provider)
+    except ValueError as exc:
+        raise PaymentValidationError(str(exc)) from exc
 
     payment = PaymentTransaction(
         shipment_id=payload.shipment_id,
         amount=payload.amount,
         payer_phone=payload.payer_phone,
         payment_stage=payload.payment_stage,
-        provider=payload.provider,
+        provider=provider,
         status="pending",
         extra=payload.extra,
     )
@@ -396,6 +386,14 @@ def initiate_payment(db: Session, payment_id: UUID, external_ref: str | None = N
         payment.external_ref = external_ref
     elif not payment.external_ref:
         payment.external_ref = f"MM-{payment.id}"
+    extra = payment.extra if isinstance(payment.extra, dict) else {}
+    extra["provider_initiation"] = build_provider_initiation_metadata(
+        provider=payment.provider,
+        external_ref=payment.external_ref,
+        amount=payment.amount,
+        payer_phone=payment.payer_phone,
+    )
+    payment.extra = extra
     log_action(db, entity="payment_transactions", action="initiate")
     db.commit()
     db.refresh(payment)

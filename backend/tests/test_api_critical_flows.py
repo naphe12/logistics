@@ -110,6 +110,16 @@ def test_backoffice_endpoints(client):
     )
     assert isinstance(alerts_res.json(), list)
 
+    s1_kpis = _req(
+        client,
+        "GET",
+        "/backoffice/kpis/s1?window_hours=168",
+        expected=(200,),
+    ).json()
+    assert "on_time_rate" in s1_kpis
+    assert "incident_rate" in s1_kpis
+    assert "scan_compliance" in s1_kpis
+
     auto_detect_res = _req(
         client,
         "POST",
@@ -119,6 +129,16 @@ def test_backoffice_endpoints(client):
     payload = auto_detect_res.json()
     assert "examined" in payload
     assert "created" in payload
+
+    run_due_res = _req(
+        client,
+        "POST",
+        "/backoffice/shipments/schedules/run-due?limit=50",
+        expected=(200,),
+    ).json()
+    assert "examined" in run_due_res
+    assert "triggered" in run_due_res
+    assert "failed" in run_due_res
 
     notify_res = _req(
         client,
@@ -130,3 +150,61 @@ def test_backoffice_endpoints(client):
     assert "critical_count" in notify
     assert "sent_count" in notify
 
+
+def test_incident_lifecycle_guards(client, sender_phone, receiver_phone, run_id):
+    shipment_res = _req(
+        client,
+        "POST",
+        "/shipments",
+        expected=(200,),
+        json={
+            "sender_phone": sender_phone,
+            "receiver_name": f"Incident Guard Receiver {run_id}",
+            "receiver_phone": receiver_phone,
+        },
+    )
+    shipment_id = shipment_res.json()["id"]
+
+    first_incident = _req(
+        client,
+        "POST",
+        "/incidents",
+        expected=(200,),
+        json={
+            "shipment_id": shipment_id,
+            "incident_type": "delayed",
+            "description": f"First delayed incident {run_id}",
+        },
+    ).json()
+    assert first_incident["status"] == "open"
+
+    duplicate_active = _req(
+        client,
+        "POST",
+        "/incidents",
+        expected=(422,),
+        json={
+            "shipment_id": shipment_id,
+            "incident_type": "delayed",
+            "description": f"Duplicate delayed incident {run_id}",
+        },
+    ).json()
+    assert "detail" in duplicate_active
+
+    resolved = _req(
+        client,
+        "PATCH",
+        f"/incidents/{first_incident['id']}/status",
+        expected=(200,),
+        json={"status": "resolved"},
+    ).json()
+    assert resolved["status"] == "resolved"
+
+    invalid_back_transition = _req(
+        client,
+        "PATCH",
+        f"/incidents/{first_incident['id']}/status",
+        expected=(422,),
+        json={"status": "investigating"},
+    ).json()
+    assert "detail" in invalid_back_transition

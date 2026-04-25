@@ -13,6 +13,7 @@ from app.schemas.backoffice import (
     BackofficeGlobalSearchResponse,
     BackofficeOverview,
     BackofficeTimeseriesOut,
+    BackofficeShipmentSchedulesRunResult,
     BroadcastSmsPreviewResult,
     BroadcastSmsRequest,
     BroadcastSmsResult,
@@ -28,6 +29,7 @@ from app.schemas.backoffice import (
     ErrorLogOut,
     SmsDispatchResult,
     SmsLogOut,
+    S1OpsKpisOut,
     UssdKpisOut,
     SmsWorkerStatusOut,
     UssdLogOut,
@@ -40,6 +42,7 @@ from app.services.backoffice_service import (
     list_recent_errors,
     list_sms_logs,
     list_ussd_logs,
+    get_s1_ops_kpis,
     get_ussd_kpis,
     notify_critical_alerts_sms,
     notify_delay_risk_customers_sms,
@@ -55,6 +58,7 @@ from app.services.backoffice_service import (
     get_backoffice_timeseries,
 )
 from app.services.notification_service import process_pending_sms
+from app.services.shipment_schedule_service import run_due_shipment_schedules
 from app.services.sms_worker_service import get_sms_queue_worker_status
 
 router = APIRouter(prefix="/backoffice", tags=["backoffice"])
@@ -102,6 +106,15 @@ def ussd_kpis_endpoint(
     _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub)),
 ):
     return get_ussd_kpis(db, window_hours=window_hours)
+
+
+@router.get("/kpis/s1", response_model=S1OpsKpisOut)
+def s1_ops_kpis_endpoint(
+    window_hours: int = Query(default=24 * 7, ge=1, le=24 * 90),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub)),
+):
+    return get_s1_ops_kpis(db, window_hours=window_hours)
 
 
 @router.get("/logs/audit", response_model=list[AuditLogOut])
@@ -280,6 +293,15 @@ def auto_detect_incidents_endpoint(
         return auto_detect_delay_incidents(db, delayed_hours=delayed_hours, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/shipments/schedules/run-due", response_model=BackofficeShipmentSchedulesRunResult)
+def run_due_shipment_schedules_backoffice_endpoint(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub)),
+):
+    return run_due_shipment_schedules(db, limit=limit)
 
 
 @router.post("/alerts/notify-critical", response_model=CriticalAlertsSmsNotifyResult)

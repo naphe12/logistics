@@ -16,6 +16,7 @@ from app.services.relay_service import (
     upsert_relay_inventory,
 )
 from app.services.audit_service import log_action
+from app.services.shipment_flow_rules import validate_transition
 
 
 class TripError(Exception):
@@ -44,6 +45,7 @@ PRIORITY_STATUS_WEIGHT: dict[str, int] = {
 DEFAULT_VEHICLE_CAPACITY = 40
 CRITICAL_INCIDENT_TYPES = {"lost", "damaged", "security", "fraud", "stolen", "critical"}
 LOADABLE_STATUSES = {"created", "ready_for_pickup", "picked_up", "arrived_at_relay"}
+CANDIDATE_STATUSES = ["created", "ready_for_pickup", "picked_up", "arrived_at_relay"]
 
 
 def _assigned_shipment_ids(db: Session) -> set[UUID]:
@@ -84,6 +86,28 @@ def _shipment_has_critical_incident(db: Session, shipment_id: UUID) -> bool:
     )
 
 
+def _shipment_loading_rejection_reasons(
+    db: Session,
+    shipment: Shipment,
+    *,
+    route: Route | None,
+) -> list[str]:
+    reasons: list[str] = []
+    shipment_status = shipment.status or "created"
+    if shipment_status not in LOADABLE_STATUSES:
+        reasons.append("status_not_loadable")
+    if shipment_status == "created" and (shipment.origin is None or shipment.destination is None):
+        reasons.append("created_missing_route")
+    if route is not None:
+        if route.origin is not None and shipment.origin != route.origin:
+            reasons.append("route_origin_mismatch")
+        if route.destination is not None and shipment.destination != route.destination:
+            reasons.append("route_destination_mismatch")
+    if _shipment_has_critical_incident(db, shipment.id):
+        reasons.append("critical_incident_open")
+    return reasons
+
+
 def suggest_shipment_priority_queue(
     db: Session,
     *,
@@ -93,12 +117,10 @@ def suggest_shipment_priority_queue(
     max_results = max(1, min(max_results, 200))
     limit = max(1, min(limit, 1000))
     now = datetime.now(UTC)
-    candidate_statuses = ["created", "ready_for_pickup", "picked_up", "arrived_at_relay"]
-
     assigned_ids = _assigned_shipment_ids(db)
     candidates = (
         db.query(Shipment)
-        .filter(Shipment.status.in_(candidate_statuses))
+        .filter(Shipment.status.in_(CANDIDATE_STATUSES))
         .order_by(Shipment.created_at.asc())
         .limit(limit)
         .all()
@@ -235,30 +257,11 @@ def auto_assign_priority_shipments_to_trip(
         if not shipment:
             continue
 
-        rejection_reasons: list[str] = []
-        shipment_status = shipment.status or "created"
-        if shipment_status not in LOADABLE_STATUSES:
-            rejection_reasons.append("status_not_loadable")
-        if shipment_status == "created" and (shipment.origin is None or shipment.destination is None):
-            rejection_reasons.append("created_missing_route")
-        if route is not None:
-            if route.origin is not None and shipment.origin != route.origin:
-                rejection_reasons.append("route_origin_mismatch")
-            if route.destination is not None and shipment.destination != route.destination:
-                rejection_reasons.append("route_destination_mismatch")
-
-        critical_incident_exists = (
-            db.query(Incident.id)
-            .filter(
-                Incident.shipment_id == shipment.id,
-                Incident.status.in_(["open", "investigating"]),
-                func.lower(func.coalesce(Incident.incident_type, "")).in_(CRITICAL_INCIDENT_TYPES),
-            )
-            .first()
-            is not None
+        rejection_reasons = _shipment_loading_rejection_reasons(
+            db,
+            shipment,
+            route=route,
         )
-        if critical_incident_exists:
-            rejection_reasons.append("critical_incident_open")
 
         if rejection_reasons:
             rejected.append(
@@ -324,12 +327,10 @@ def suggest_shipment_grouping(
 ) -> dict:
     max_group_size = max(1, min(max_group_size, 100))
     limit = max(1, min(limit, 1000))
-    candidate_statuses = ["created", "ready_for_pickup", "picked_up", "arrived_at_relay"]
-
     assigned_shipment_ids = _assigned_shipment_ids(db)
     candidates = (
         db.query(Shipment)
-        .filter(Shipment.status.in_(candidate_statuses))
+        .filter(Shipment.status.in_(CANDIDATE_STATUSES))
         .order_by(Shipment.created_at.asc())
         .limit(limit)
         .all()
@@ -489,19 +490,11 @@ def replan_trip_from_incidents(
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             continue
-        rejection_reasons: list[str] = []
-        shipment_status = shipment.status or "created"
-        if shipment_status not in LOADABLE_STATUSES:
-            rejection_reasons.append("status_not_loadable")
-        if shipment_status == "created" and (shipment.origin is None or shipment.destination is None):
-            rejection_reasons.append("created_missing_route")
-        if route is not None:
-            if route.origin is not None and shipment.origin != route.origin:
-                rejection_reasons.append("route_origin_mismatch")
-            if route.destination is not None and shipment.destination != route.destination:
-                rejection_reasons.append("route_destination_mismatch")
-        if _shipment_has_critical_incident(db, shipment.id):
-            rejection_reasons.append("critical_incident_open")
+        rejection_reasons = _shipment_loading_rejection_reasons(
+            db,
+            shipment,
+            route=route,
+        )
         if rejection_reasons:
             continue
 
@@ -696,12 +689,53 @@ def _manifest_shipments(db: Session, trip_id: UUID) -> list[Shipment]:
     return db.query(Shipment).filter(Shipment.id.in_(shipment_ids)).all()
 
 
+def _scan_ready_shipments_or_raise(
+    db: Session,
+    trip_id: UUID,
+    *,
+    to_status: str,
+    event_type: str,
+) -> list[Shipment]:
+    shipments = _manifest_shipments(db, trip_id)
+    if not shipments:
+        raise ManifestShipmentError("Cannot scan trip: manifest has no shipments")
+
+    incoherent: list[str] = []
+    target = (to_status or "").strip().lower()
+    for shipment in shipments:
+        current = (shipment.status or "").strip().lower()
+        if current == target:
+            incoherent.append(f"{shipment.shipment_no or shipment.id}:{current}")
+            continue
+        try:
+            validate_transition(
+                shipment.status,
+                to_status,
+                event_type=event_type,
+            )
+        except ValueError:
+            incoherent.append(f"{shipment.shipment_no or shipment.id}:{current}")
+
+    if incoherent:
+        preview = ", ".join(incoherent[:5])
+        suffix = f" (+{len(incoherent) - 5})" if len(incoherent) > 5 else ""
+        raise ManifestShipmentError(
+            f"Cannot scan trip: incoherent shipment statuses for '{to_status}' ({preview}{suffix})"
+        )
+    return shipments
+
+
 def scan_trip_departure(db: Session, trip_id: UUID, *, relay_id=None, event_type: str | None = None) -> tuple[Trip, int]:
     trip = get_trip(db, trip_id)
     if not trip:
         raise TripNotFoundError("Trip not found")
-    shipments = _manifest_shipments(db, trip_id)
     event_name = event_type or "shipment_departed_trip"
+    shipments = _scan_ready_shipments_or_raise(
+        db,
+        trip_id,
+        to_status="in_transit",
+        event_type=event_name,
+    )
     for shipment in shipments:
         shipment.status = "in_transit"
         db.add(
@@ -740,8 +774,13 @@ def scan_trip_arrival(db: Session, trip_id: UUID, *, relay_id=None, event_type: 
     trip = get_trip(db, trip_id)
     if not trip:
         raise TripNotFoundError("Trip not found")
-    shipments = _manifest_shipments(db, trip_id)
     event_name = event_type or "shipment_arrived_trip"
+    shipments = _scan_ready_shipments_or_raise(
+        db,
+        trip_id,
+        to_status="arrived_at_relay",
+        event_type=event_name,
+    )
     for shipment in shipments:
         shipment.status = "arrived_at_relay"
         db.add(

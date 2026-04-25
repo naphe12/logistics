@@ -5,6 +5,7 @@ const navByRole = {
   client: [
     { to: '/dashboard', label: 'Accueil client' },
     { to: '/shipments', label: 'Envoyer colis' },
+    { to: '/shipment-schedules', label: 'Envois programmes' },
     { to: '/tracking', label: 'Suivi colis' },
     { to: '/incidents', label: 'Reclamations' },
     { to: '/payments', label: 'Paiements' },
@@ -14,6 +15,7 @@ const navByRole = {
     { to: '/tracking', label: 'Operations terrain' },
     { to: '/transport', label: 'Trips & scans' },
     { to: '/shipments', label: 'Creation colis' },
+    { to: '/shipment-schedules', label: 'Envois programmes' },
     { to: '/relays', label: 'Relais' },
     { to: '/incidents', label: 'Incidents' },
   ],
@@ -21,6 +23,7 @@ const navByRole = {
     { to: '/dashboard', label: 'Pilotage global' },
     { to: '/backoffice', label: 'Backoffice' },
     { to: '/shipments', label: 'Colis' },
+    { to: '/shipment-schedules', label: 'Envois programmes' },
     { to: '/tracking', label: 'Tracking live' },
     { to: '/transport', label: 'Transport' },
     { to: '/relays', label: 'Reseau relais' },

@@ -92,6 +92,27 @@ def _assert_capacity_for_present(db: Session, relay: RelayPoint, shipment_id: UU
         )
 
 
+def _assert_not_present_in_other_relay(
+    db: Session,
+    *,
+    relay_id: UUID,
+    shipment_id: UUID,
+) -> None:
+    conflict = (
+        db.query(RelayInventory)
+        .filter(
+            RelayInventory.shipment_id == shipment_id,
+            RelayInventory.relay_id != relay_id,
+            RelayInventory.present.is_(True),
+        )
+        .first()
+    )
+    if conflict:
+        raise RelayInventoryError(
+            "Shipment is already marked present in another relay"
+        )
+
+
 def list_relays(db: Session) -> list[RelayPoint]:
     return db.query(RelayPoint).order_by(RelayPoint.name.asc()).all()
 
@@ -229,6 +250,11 @@ def upsert_relay_inventory(
     if not shipment:
         raise RelayInventoryError("Shipment not found")
     if present:
+        _assert_not_present_in_other_relay(
+            db,
+            relay_id=relay_id,
+            shipment_id=shipment_id,
+        )
         _assert_capacity_for_present(db, relay, shipment_id)
 
     row = (

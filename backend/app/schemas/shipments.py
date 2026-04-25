@@ -2,7 +2,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 
 class ShipmentCreate(BaseModel):
@@ -19,6 +19,104 @@ class ShipmentCreate(BaseModel):
     declared_value: Decimal | None = Field(default=None, ge=0)
     insurance_opt_in: bool = False
     extra: dict[str, Any] | None = None
+
+
+ShipmentScheduleFrequency = Literal["once", "daily", "weekly", "monthly"]
+
+
+class ShipmentScheduleCreate(BaseModel):
+    sender_id: UUID | None = None
+    sender_phone: str = Field(min_length=8, max_length=20)
+    receiver_name: str = Field(min_length=2, max_length=180)
+    receiver_phone: str = Field(min_length=8, max_length=20)
+    origin_relay_id: UUID | None = None
+    destination_relay_id: UUID | None = None
+    delivery_address_id: UUID | None = None
+    delivery_note: str | None = Field(default=None, max_length=500)
+    declared_value: Decimal | None = Field(default=None, ge=0)
+    insurance_opt_in: bool = False
+    extra: dict[str, Any] | None = None
+    frequency: ShipmentScheduleFrequency = "once"
+    interval_count: int = Field(default=1, ge=1, le=365)
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    day_of_month: int | None = Field(default=None, ge=1, le=31)
+    start_at: datetime
+    end_at: datetime | None = None
+    remaining_runs: int | None = Field(default=None, ge=1, le=10000)
+    is_active: bool = True
+
+
+class ShipmentScheduleUpdate(BaseModel):
+    receiver_name: str | None = Field(default=None, min_length=2, max_length=180)
+    receiver_phone: str | None = Field(default=None, min_length=8, max_length=20)
+    origin_relay_id: UUID | None = None
+    destination_relay_id: UUID | None = None
+    delivery_address_id: UUID | None = None
+    delivery_note: str | None = Field(default=None, max_length=500)
+    declared_value: Decimal | None = Field(default=None, ge=0)
+    insurance_opt_in: bool | None = None
+    extra: dict[str, Any] | None = None
+    frequency: ShipmentScheduleFrequency | None = None
+    interval_count: int | None = Field(default=None, ge=1, le=365)
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    day_of_month: int | None = Field(default=None, ge=1, le=31)
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    remaining_runs: int | None = Field(default=None, ge=1, le=10000)
+    is_active: bool | None = None
+    recompute_next_run: bool = False
+
+
+class ShipmentScheduleOut(BaseModel):
+    id: UUID
+    sender_id: UUID | None = None
+    sender_phone: str | None = None
+    receiver_name: str | None = None
+    receiver_phone: str | None = None
+    origin_relay_id: UUID | None = None
+    destination_relay_id: UUID | None = None
+    delivery_address_id: UUID | None = None
+    delivery_note: str | None = None
+    declared_value: Decimal | None = None
+    insurance_opt_in: bool
+    frequency: ShipmentScheduleFrequency
+    interval_count: int
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    start_at: datetime
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    end_at: datetime | None = None
+    remaining_runs: int | None = None
+    is_active: bool
+    last_error: str | None = None
+    extra: dict[str, Any] | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ShipmentScheduleRunItem(BaseModel):
+    schedule_id: UUID
+    success: bool
+    shipment_id: UUID | None = None
+    error: str | None = None
+
+
+class ShipmentScheduleRunResult(BaseModel):
+    examined: int
+    triggered: int
+    failed: int
+    items: list[ShipmentScheduleRunItem] = Field(default_factory=list)
+
+
+class ShipmentScheduleListPage(BaseModel):
+    items: list[ShipmentScheduleOut]
+    total: int
+    offset: int
+    limit: int
 
 
 class ShipmentStatusUpdate(BaseModel):
@@ -276,6 +374,19 @@ class ShipmentPickupSlotUpdateRequest(BaseModel):
     starts_at: datetime
     ends_at: datetime
     note: str | None = Field(default=None, max_length=240)
+
+
+class ShipmentPickupMarkRequest(BaseModel):
+    relay_id: UUID | None = None
+    event_type: str = Field(default="shipment_picked_up", min_length=2, max_length=60)
+    extra: dict[str, Any] | None = None
+
+
+class ShipmentRelayTransferRequest(BaseModel):
+    from_relay_id: UUID
+    to_relay_id: UUID
+    event_type: str = Field(default="shipment_relay_transfer", min_length=2, max_length=60)
+    extra: dict[str, Any] | None = None
 
 
 class ShipmentDeliveryProofCreateRequest(BaseModel):

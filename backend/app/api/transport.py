@@ -268,6 +268,10 @@ def scan_departure_endpoint(
         )
     except TripNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ManifestShipmentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RelaySyncError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return TripScanResponse(
         trip_id=trip.id,
         status=trip.status,
@@ -292,6 +296,10 @@ def scan_arrival_endpoint(
         )
     except TripNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ManifestShipmentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RelaySyncError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return TripScanResponse(
         trip_id=trip.id,
         status=trip.status,

@@ -34,6 +34,15 @@ class IncidentValidationError(IncidentError):
     pass
 
 
+INCIDENT_ACTIVE_STATUSES = {"open", "investigating"}
+INCIDENT_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "open": {"investigating", "resolved", "closed"},
+    "investigating": {"resolved", "closed"},
+    "resolved": {"closed"},
+    "closed": set(),
+}
+
+
 def _to_decimal(value: Decimal | int | float | str | None) -> Decimal:
     if value is None:
         return Decimal("0")
@@ -155,6 +164,35 @@ def _require_incident_status_exists(db: Session, status_code: str) -> None:
         raise IncidentValidationError(f"Unknown incident status: {status_code}")
 
 
+def _normalize_incident_status(db: Session, raw_status: str) -> str:
+    normalized = (raw_status or "").strip().lower()
+    if not normalized:
+        raise IncidentValidationError("Incident status is required")
+    _require_incident_status_exists(db, normalized)
+    return normalized
+
+
+def _assert_no_active_duplicate_incident(
+    db: Session,
+    *,
+    shipment_id: UUID,
+    incident_type: str,
+) -> None:
+    existing = (
+        db.query(Incident.id)
+        .filter(
+            Incident.shipment_id == shipment_id,
+            Incident.incident_type == incident_type,
+            Incident.status.in_(list(INCIDENT_ACTIVE_STATUSES)),
+        )
+        .first()
+    )
+    if existing:
+        raise IncidentValidationError(
+            f"An active incident of type '{incident_type}' already exists for this shipment"
+        )
+
+
 def list_incidents(
     db: Session,
     *,
@@ -222,13 +260,18 @@ def create_incident(db: Session, payload: IncidentCreate, current_user: User | N
         )
         if not is_owner:
             raise IncidentValidationError("Not allowed for this shipment")
-    _require_incident_status_exists(db, "open")
+    open_status = _normalize_incident_status(db, "open")
+    _assert_no_active_duplicate_incident(
+        db,
+        shipment_id=payload.shipment_id,
+        incident_type=payload.incident_type,
+    )
 
     incident = Incident(
         shipment_id=payload.shipment_id,
         incident_type=payload.incident_type,
         description=payload.description,
-        status="open",
+        status=open_status,
         extra=payload.extra,
     )
     db.add(incident)
@@ -239,11 +282,17 @@ def create_incident(db: Session, payload: IncidentCreate, current_user: User | N
 
 
 def update_incident_status(db: Session, incident_id: UUID, status: str) -> Incident:
-    _require_incident_status_exists(db, status)
+    target_status = _normalize_incident_status(db, status)
     incident = get_incident(db, incident_id)
     if not incident:
         raise IncidentNotFoundError("Incident not found")
-    incident.status = status
+    current_status = (incident.status or "open").strip().lower()
+    if current_status not in INCIDENT_STATUS_TRANSITIONS:
+        raise IncidentValidationError(f"Unsupported current incident status: {current_status}")
+    if target_status != current_status and target_status not in INCIDENT_STATUS_TRANSITIONS[current_status]:
+        raise IncidentValidationError(f"Invalid incident transition: {current_status} -> {target_status}")
+
+    incident.status = target_status
     log_action(db, entity="incidents", action="status_update")
     db.commit()
     db.refresh(incident)

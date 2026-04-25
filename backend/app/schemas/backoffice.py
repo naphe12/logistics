@@ -68,6 +68,18 @@ class UssdKpisOut(BaseModel):
     pay_flow_hits: int
 
 
+class S1OpsKpisOut(BaseModel):
+    window_hours: int
+    on_time_rate: float
+    incident_rate: float
+    scan_compliance: float
+    shipments_created: int
+    delivered_count: int
+    on_time_count: int
+    incident_count: int
+    scan_eligible_count: int
+
+
 class AuditLogOut(BaseModel):
     id: UUID
     entity: str | None = None
@@ -113,6 +125,9 @@ class SmsWorkerStatusOut(BaseModel):
     claims_auto_escalate_interval_seconds: int
     claims_auto_escalate_limit: int
     claims_auto_escalate_stale_hours: int
+    shipment_schedule_autorun_enabled: bool
+    shipment_schedule_autorun_interval_seconds: int
+    shipment_schedule_autorun_limit: int
     outbox_worker_enabled: bool
     outbox_interval_seconds: int
     outbox_batch_size: int
@@ -130,6 +145,9 @@ class SmsWorkerStatusOut(BaseModel):
     last_claims_escalation_run_at: str | None = None
     last_claims_escalation_result: dict[str, Any] | None = None
     last_claims_escalation_error: str | None = None
+    last_shipment_schedule_run_at: str | None = None
+    last_shipment_schedule_result: dict[str, Any] | None = None
+    last_shipment_schedule_error: str | None = None
 
 
 class BackofficeAlertOut(BaseModel):
@@ -314,3 +332,10 @@ class BackofficeTimeseriesPoint(BaseModel):
 class BackofficeTimeseriesOut(BaseModel):
     days: int
     points: list[BackofficeTimeseriesPoint]
+
+
+class BackofficeShipmentSchedulesRunResult(BaseModel):
+    examined: int
+    triggered: int
+    failed: int
+    items: list[dict[str, Any]] = Field(default_factory=list)

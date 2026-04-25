@@ -21,6 +21,7 @@ from app.models.relays import RelayPoint
 from app.models.shipments import RelayInventory
 from app.models.payments import PaymentTransaction
 from app.models.shipments import Shipment
+from app.models.shipments import ShipmentEvent
 from app.models.statuses import IncidentStatus
 from app.models.transport import Trip
 from app.models.ussd import UssdLog
@@ -173,6 +174,92 @@ def get_ussd_kpis(db: Session, *, window_hours: int = 24) -> dict:
         "track_flow_hits": int(track_flow_hits),
         "pickup_flow_hits": int(pickup_flow_hits),
         "pay_flow_hits": int(pay_flow_hits),
+    }
+
+
+def get_s1_ops_kpis(db: Session, *, window_hours: int = 24 * 7) -> dict:
+    window_hours = max(1, min(window_hours, 24 * 90))
+    since = datetime.now(UTC) - timedelta(hours=window_hours)
+
+    shipments_created = (
+        db.query(Shipment.id)
+        .filter(Shipment.created_at >= since)
+        .count()
+    )
+
+    delivered_rows = (
+        db.query(Shipment.created_at, Shipment.updated_at)
+        .filter(
+            Shipment.created_at >= since,
+            Shipment.status == "delivered",
+            Shipment.created_at.is_not(None),
+            Shipment.updated_at.is_not(None),
+        )
+        .all()
+    )
+    delivered_count = len(delivered_rows)
+    on_time_count = 0
+    for created_at, updated_at in delivered_rows:
+        elapsed_h = (updated_at - created_at).total_seconds() / 3600.0
+        if elapsed_h <= max(1, OPS_DELAY_RISK_HOURS):
+            on_time_count += 1
+    on_time_rate = round((on_time_count * 100.0) / delivered_count, 2) if delivered_count > 0 else 0.0
+
+    incident_count = (
+        db.query(Incident.id)
+        .filter(Incident.created_at >= since)
+        .count()
+    )
+    incident_rate = round((incident_count * 100.0) / shipments_created, 2) if shipments_created > 0 else 0.0
+
+    eligible_statuses = {"in_transit", "arrived_at_relay", "ready_for_pickup", "delivered"}
+    eligible_shipments = (
+        db.query(Shipment.id, Shipment.status)
+        .filter(Shipment.created_at >= since, Shipment.status.in_(list(eligible_statuses)))
+        .all()
+    )
+    eligible_count = len(eligible_shipments)
+    if eligible_count == 0:
+        scan_compliance = 0.0
+    else:
+        expected_scan_by_shipment: dict[str, int] = {}
+        for shipment_id, status in eligible_shipments:
+            normalized = (status or "").strip().lower()
+            expected_scan_by_shipment[str(shipment_id)] = 1 if normalized == "in_transit" else 2
+
+        scan_rows = (
+            db.query(
+                ShipmentEvent.shipment_id,
+                func.count(ShipmentEvent.id).label("scan_count"),
+            )
+            .filter(
+                ShipmentEvent.shipment_id.in_([shipment_id for shipment_id, _ in eligible_shipments]),
+                ShipmentEvent.created_at >= since,
+                func.lower(func.coalesce(ShipmentEvent.event_type, "")).in_(
+                    ["shipment_departed_trip", "shipment_arrived_trip"]
+                ),
+            )
+            .group_by(ShipmentEvent.shipment_id)
+            .all()
+        )
+        actual_scan_by_shipment = {str(row.shipment_id): int(row.scan_count) for row in scan_rows}
+
+        compliant = 0
+        for shipment_id, expected_scans in expected_scan_by_shipment.items():
+            if actual_scan_by_shipment.get(shipment_id, 0) >= expected_scans:
+                compliant += 1
+        scan_compliance = round((compliant * 100.0) / eligible_count, 2)
+
+    return {
+        "window_hours": window_hours,
+        "on_time_rate": on_time_rate,
+        "incident_rate": incident_rate,
+        "scan_compliance": scan_compliance,
+        "shipments_created": int(shipments_created),
+        "delivered_count": int(delivered_count),
+        "on_time_count": int(on_time_count),
+        "incident_count": int(incident_count),
+        "scan_eligible_count": int(eligible_count),
     }
 
 

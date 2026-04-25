@@ -11,6 +11,7 @@ import PaymentsPage from './pages/PaymentsPage'
 import RegisterPage from './pages/RegisterPage'
 import RelaysPage from './pages/RelaysPage'
 import ShipmentsPage from './pages/ShipmentsPage'
+import ShipmentSchedulesPage from './pages/ShipmentSchedulesPage'
 import PublicTrackingPage from './pages/PublicTrackingPage'
 import TrackingPage from './pages/TrackingPage'
 import TransportPage from './pages/TransportPage'
@@ -102,6 +103,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['client', 'agent', 'admin']}>
                 <ShipmentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shipment-schedules"
+            element={
+              <ProtectedRoute allowedRoles={['client', 'agent', 'admin']}>
+                <ShipmentSchedulesPage />
               </ProtectedRoute>
             }
           />

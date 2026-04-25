@@ -112,3 +112,38 @@ class RelayInventory(Base):
     relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     shipment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.shipments.id"))
     present: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ShipmentSchedule(Base):
+    __tablename__ = "shipment_schedules"
+    __table_args__ = {"schema": "logix"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sender_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.users.id"))
+    sender_phone: Mapped[str | None] = mapped_column(String(20))
+    receiver_name: Mapped[str | None] = mapped_column(String(180))
+    receiver_phone: Mapped[str | None] = mapped_column(String(20))
+    origin_relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
+    destination_relay_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
+    delivery_address_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.addresses.id"))
+    delivery_note: Mapped[str | None] = mapped_column(String(500))
+    declared_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    insurance_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="once")
+    interval_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    day_of_week: Mapped[int | None] = mapped_column(Integer)
+    day_of_month: Mapped[int | None] = mapped_column(Integer)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    remaining_runs: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_error: Mapped[str | None] = mapped_column(String(1000))
+    extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

@@ -312,7 +312,7 @@ def update_incident_status_endpoint(
 ):
     try:
         updated = update_incident_status(db, incident_id, payload.status)
-        if payload.status == "resolved":
+        if (updated.status or "").strip().lower() == "resolved":
             actor = current_user.phone_e164 or str(current_user.id)
             add_incident_update(
                 db,

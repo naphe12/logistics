@@ -12,6 +12,7 @@ from app.models.shipments import (
     ManifestShipment,
     RelayOperation,
     RelayInventory,
+    ShipmentSchedule,
 )
 from app.models.ussd import UssdSession, UssdLog, ShipmentCode, ShipmentCodeAttempt, OTPCode
 from app.models.payments import PaymentTransaction

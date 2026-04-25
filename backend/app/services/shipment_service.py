@@ -19,6 +19,8 @@ from app.services.notification_service import queue_and_send_sms
 from app.realtime.events import emit_shipment_status_update
 from app.enums import UserTypeEnum
 from app.models.users import User
+from app.services.relay_service import upsert_relay_inventory
+from app.services.shipment_flow_rules import validate_transition
 from app.config import JWT_SECRET_KEY
 from app.config import (
     PUBLIC_TRACK_BRUTEFORCE_BASE_DELAY_SECONDS,
@@ -437,6 +439,11 @@ def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpda
     if not shipment:
         raise ShipmentNotFoundError("Shipment not found")
 
+    validate_transition(
+        shipment.status,
+        payload.status,
+        event_type=payload.event_type,
+    )
     shipment.status = payload.status
     db.add(
         ShipmentEvent(
@@ -655,6 +662,120 @@ def update_pickup_slot(
     )
     db.commit()
     db.refresh(shipment)
+    return shipment
+
+
+def mark_shipment_picked_up(
+    db: Session,
+    shipment_id,
+    *,
+    relay_id=None,
+    event_type: str = "shipment_picked_up",
+    extra: dict | None = None,
+) -> Shipment:
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+    validate_transition(
+        shipment.status,
+        "picked_up",
+        event_type=event_type,
+    )
+
+    shipment.status = "picked_up"
+    db.add(
+        ShipmentEvent(
+            shipment_id=shipment.id,
+            relay_id=relay_id,
+            event_type=event_type,
+            extra=extra,
+        )
+    )
+    log_action(db, entity="shipments", action="mark_picked_up")
+    db.commit()
+    db.refresh(shipment)
+    _maybe_send_status_sms(db, shipment, "picked_up")
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status="picked_up",
+        event_type=event_type,
+        relay_id=relay_id,
+    )
+    return shipment
+
+
+def transfer_shipment_between_relays(
+    db: Session,
+    shipment_id,
+    *,
+    from_relay_id,
+    to_relay_id,
+    event_type: str = "shipment_relay_transfer",
+    extra: dict | None = None,
+) -> Shipment:
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+    if from_relay_id == to_relay_id:
+        raise ValueError("from_relay_id and to_relay_id must be different")
+    validate_transition(
+        shipment.status,
+        "arrived_at_relay",
+        event_type=event_type,
+    )
+
+    source_inventory = (
+        db.query(RelayInventory)
+        .filter(
+            RelayInventory.relay_id == from_relay_id,
+            RelayInventory.shipment_id == shipment.id,
+            RelayInventory.present.is_(True),
+        )
+        .first()
+    )
+    if not source_inventory:
+        raise ValueError("Shipment is not present in source relay inventory")
+
+    upsert_relay_inventory(
+        db,
+        from_relay_id,
+        shipment_id=shipment.id,
+        present=False,
+        auto_commit=False,
+    )
+    upsert_relay_inventory(
+        db,
+        to_relay_id,
+        shipment_id=shipment.id,
+        present=True,
+        auto_commit=False,
+    )
+
+    shipment.status = "arrived_at_relay"
+    event_extra = {
+        "from_relay_id": str(from_relay_id),
+        "to_relay_id": str(to_relay_id),
+    }
+    if isinstance(extra, dict):
+        event_extra.update(extra)
+    db.add(
+        ShipmentEvent(
+            shipment_id=shipment.id,
+            relay_id=to_relay_id,
+            event_type=event_type,
+            extra=event_extra,
+        )
+    )
+    log_action(db, entity="shipments", action="relay_transfer")
+    db.commit()
+    db.refresh(shipment)
+    _maybe_send_status_sms(db, shipment, "arrived_at_relay")
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status="arrived_at_relay",
+        event_type=event_type,
+        relay_id=to_relay_id,
+    )
     return shipment
 
 

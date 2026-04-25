@@ -15,6 +15,9 @@ from app.config import (
     OPS_ALERT_AUTONOTIFY_ENABLED,
     OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS,
     OPS_ALERT_SMS_MAX_PER_HOUR,
+    SHIPMENT_SCHEDULE_AUTORUN_ENABLED,
+    SHIPMENT_SCHEDULE_AUTORUN_INTERVAL_SECONDS,
+    SHIPMENT_SCHEDULE_AUTORUN_LIMIT,
     INSURANCE_CLAIM_REVIEW_SLA_HOURS,
     SMS_QUEUE_AUTODISPATCH_BATCH,
     SMS_QUEUE_AUTODISPATCH_ENABLED,
@@ -27,6 +30,7 @@ from app.services.backoffice_service import notify_critical_alerts_sms
 from app.services.incident_service import auto_escalate_stale_claims
 from app.services.notification_service import process_pending_sms
 from app.services.outbox_service import get_outbox_status_counts, process_event_outbox
+from app.services.shipment_schedule_service import run_due_shipment_schedules
 
 
 _worker_thread: threading.Thread | None = None
@@ -48,6 +52,9 @@ _status: dict[str, object] = {
     "claims_auto_escalate_interval_seconds": CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
     "claims_auto_escalate_limit": CLAIMS_AUTO_ESCALATE_LIMIT,
     "claims_auto_escalate_stale_hours": INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+    "shipment_schedule_autorun_enabled": SHIPMENT_SCHEDULE_AUTORUN_ENABLED,
+    "shipment_schedule_autorun_interval_seconds": SHIPMENT_SCHEDULE_AUTORUN_INTERVAL_SECONDS,
+    "shipment_schedule_autorun_limit": SHIPMENT_SCHEDULE_AUTORUN_LIMIT,
     "outbox_worker_enabled": OUTBOX_WORKER_ENABLED,
     "outbox_interval_seconds": OUTBOX_WORKER_INTERVAL_SECONDS,
     "outbox_batch_size": OUTBOX_WORKER_BATCH,
@@ -65,6 +72,9 @@ _status: dict[str, object] = {
     "last_claims_escalation_run_at": None,
     "last_claims_escalation_result": None,
     "last_claims_escalation_error": None,
+    "last_shipment_schedule_run_at": None,
+    "last_shipment_schedule_result": None,
+    "last_shipment_schedule_error": None,
 }
 
 
@@ -143,6 +153,7 @@ def _run_loop() -> None:
 
     next_ops_alert_check_at = datetime.now(UTC)
     next_claims_escalation_check_at = datetime.now(UTC)
+    next_shipment_schedule_check_at = datetime.now(UTC)
     next_outbox_check_at = datetime.now(UTC)
     while not _worker_stop_event.is_set():
         if not leader_acquired:
@@ -253,6 +264,28 @@ def _run_loop() -> None:
             claims_interval = max(60, CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS)
             next_claims_escalation_check_at = datetime.now(UTC) + timedelta(seconds=claims_interval)
 
+        if SHIPMENT_SCHEDULE_AUTORUN_ENABLED and datetime.now(UTC) >= next_shipment_schedule_check_at:
+            schedules_db = SessionLocal()
+            try:
+                schedules_result = run_due_shipment_schedules(
+                    schedules_db,
+                    limit=SHIPMENT_SCHEDULE_AUTORUN_LIMIT,
+                )
+                _set_status(
+                    last_shipment_schedule_run_at=_utc_iso_now(),
+                    last_shipment_schedule_result=schedules_result,
+                    last_shipment_schedule_error=None,
+                )
+            except Exception as exc:
+                _set_status(
+                    last_shipment_schedule_run_at=_utc_iso_now(),
+                    last_shipment_schedule_error=str(exc)[:2000],
+                )
+            finally:
+                schedules_db.close()
+            schedule_interval = max(30, SHIPMENT_SCHEDULE_AUTORUN_INTERVAL_SECONDS)
+            next_shipment_schedule_check_at = datetime.now(UTC) + timedelta(seconds=schedule_interval)
+
         _wait_interval_or_stop()
 
     _release_leader_lock(lock_db, leader_mode, leader_acquired)
@@ -282,6 +315,9 @@ def start_sms_queue_worker() -> None:
         claims_auto_escalate_interval_seconds=CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
         claims_auto_escalate_limit=CLAIMS_AUTO_ESCALATE_LIMIT,
         claims_auto_escalate_stale_hours=INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+        shipment_schedule_autorun_enabled=SHIPMENT_SCHEDULE_AUTORUN_ENABLED,
+        shipment_schedule_autorun_interval_seconds=SHIPMENT_SCHEDULE_AUTORUN_INTERVAL_SECONDS,
+        shipment_schedule_autorun_limit=SHIPMENT_SCHEDULE_AUTORUN_LIMIT,
         outbox_worker_enabled=OUTBOX_WORKER_ENABLED,
         outbox_interval_seconds=OUTBOX_WORKER_INTERVAL_SECONDS,
         outbox_batch_size=OUTBOX_WORKER_BATCH,

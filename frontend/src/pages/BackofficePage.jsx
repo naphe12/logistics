@@ -3,6 +3,7 @@ import {
   autoEscalateClaims,
   dispatchBackofficeSms,
   getBackofficeOverview,
+  getBackofficeS1OpsKpis,
   getBackofficeSmsWorkerStatus,
   getClaimsFinanceReport,
   getClaimsOpsStats,
@@ -12,6 +13,7 @@ import {
   listBackofficeSmsLogs,
   listBackofficeUssdLogs,
   notifyBackofficeCriticalAlertsSms,
+  runBackofficeShipmentSchedulesDue,
   runBackofficeAutoDetectIncidents,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -22,6 +24,36 @@ function severityBadge(severity) {
   if (value.includes('warning') || value.includes('medium')) return 'warning'
   if (value.includes('low') || value.includes('info')) return 'info'
   return 'info'
+}
+
+function getS1Health(kpis) {
+  const onTime = Number(kpis?.on_time_rate ?? NaN)
+  const incident = Number(kpis?.incident_rate ?? NaN)
+  const scan = Number(kpis?.scan_compliance ?? NaN)
+
+  if (Number.isNaN(onTime) || Number.isNaN(incident) || Number.isNaN(scan)) {
+    return { tone: 'info', label: 'S1 health unknown', reasons: ['Insufficient KPI data'] }
+  }
+
+  const hardAlerts = []
+  const softAlerts = []
+
+  if (onTime < 85) hardAlerts.push(`on_time_rate ${onTime.toFixed(2)}% < 85%`)
+  else if (onTime < 90) softAlerts.push(`on_time_rate ${onTime.toFixed(2)}% < 90%`)
+
+  if (incident > 8) hardAlerts.push(`incident_rate ${incident.toFixed(2)}% > 8%`)
+  else if (incident > 5) softAlerts.push(`incident_rate ${incident.toFixed(2)}% > 5%`)
+
+  if (scan < 90) hardAlerts.push(`scan_compliance ${scan.toFixed(2)}% < 90%`)
+  else if (scan < 95) softAlerts.push(`scan_compliance ${scan.toFixed(2)}% < 95%`)
+
+  if (hardAlerts.length > 0) {
+    return { tone: 'danger', label: 'S1 health critical', reasons: hardAlerts }
+  }
+  if (softAlerts.length > 0) {
+    return { tone: 'warning', label: 'S1 health at risk', reasons: softAlerts }
+  }
+  return { tone: 'success', label: 'S1 health healthy', reasons: ['All KPI thresholds met'] }
 }
 
 export default function BackofficePage() {
@@ -38,16 +70,19 @@ export default function BackofficePage() {
   const [recentErrors, setRecentErrors] = useState([])
   const [claimsStats, setClaimsStats] = useState(null)
   const [claimsFinance, setClaimsFinance] = useState(null)
+  const [s1Kpis, setS1Kpis] = useState(null)
 
   const [dispatchResult, setDispatchResult] = useState(null)
   const [autoDetectResult, setAutoDetectResult] = useState(null)
   const [notifyCriticalResult, setNotifyCriticalResult] = useState(null)
   const [claimsEscalationResult, setClaimsEscalationResult] = useState(null)
+  const [shipmentSchedulesRunResult, setShipmentSchedulesRunResult] = useState(null)
 
   async function loadData() {
     if (!token) return
-    const [ov, worker, opsAlerts, sms, ussd, audit, errs, claimStats, claimFinance] = await Promise.all([
+    const [ov, s1, worker, opsAlerts, sms, ussd, audit, errs, claimStats, claimFinance] = await Promise.all([
       getBackofficeOverview(token),
+      getBackofficeS1OpsKpis(token, 168),
       getBackofficeSmsWorkerStatus(token),
       listBackofficeAlerts(token, { delayed_hours: 48, relay_utilization_warn: 0.9, limit: 100 }),
       listBackofficeSmsLogs(token, 30),
@@ -58,6 +93,7 @@ export default function BackofficePage() {
       getClaimsFinanceReport(token, { months: 6 }),
     ])
     setOverview(ov)
+    setS1Kpis(s1 || null)
     setWorkerStatus(worker)
     setAlerts(opsAlerts || [])
     setSmsLogs(sms || [])
@@ -67,6 +103,12 @@ export default function BackofficePage() {
     setClaimsStats(claimStats || null)
     setClaimsFinance(claimFinance || null)
   }
+
+  function pct(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '-'
+    return `${value.toFixed(2)}%`
+  }
+  const s1Health = getS1Health(s1Kpis)
 
   async function onDispatchSms() {
     setError('')
@@ -131,6 +173,19 @@ export default function BackofficePage() {
     }
   }
 
+  async function onRunShipmentSchedulesDueNow() {
+    setError('')
+    setMessage('')
+    try {
+      const result = await runBackofficeShipmentSchedulesDue(token, 200)
+      setShipmentSchedulesRunResult(result)
+      setMessage('Execution forcee des envois programmes terminee')
+      await loadData()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   useEffect(() => {
     let mounted = true
     loadData().catch((err) => {
@@ -157,24 +212,32 @@ export default function BackofficePage() {
           Supervision unifiee du reseau: incidents, claims SLA, SMS queue, outbox event-driven, alertes
           critiques et marges assurance.
         </p>
+        <p style={{ marginTop: 8 }}>
+          <span className={`badge ${s1Health.tone}`}>{s1Health.label}</span>
+        </p>
+        <p className="kpi-subline">{s1Health.reasons.join(' | ')}</p>
       </article>
 
       <section className="kpi-grid">
         <article className="kpi-card">
+          <p>S1 On-time rate</p>
+          <h3>{pct(s1Kpis?.on_time_rate)}</h3>
+          <p className="kpi-subline">window {s1Kpis?.window_hours ?? 168}h</p>
+        </article>
+        <article className="kpi-card">
+          <p>S1 Incident rate</p>
+          <h3>{pct(s1Kpis?.incident_rate)}</h3>
+          <p className="kpi-subline">incidents {s1Kpis?.incident_count ?? '-'}</p>
+        </article>
+        <article className="kpi-card">
+          <p>S1 Scan compliance</p>
+          <h3>{pct(s1Kpis?.scan_compliance)}</h3>
+          <p className="kpi-subline">eligible {s1Kpis?.scan_eligible_count ?? '-'}</p>
+        </article>
+        <article className="kpi-card">
           <p>Colis aujourd hui</p>
           <h3>{overview?.shipments_today ?? '-'}</h3>
-        </article>
-        <article className="kpi-card">
-          <p>Incidents ouverts</p>
-          <h3>{overview?.incidents_open ?? '-'}</h3>
-        </article>
-        <article className="kpi-card">
-          <p>Claims en attente</p>
-          <h3>{claimsStats?.pending ?? '-'}</h3>
-        </article>
-        <article className="kpi-card">
-          <p>Claims retard SLA</p>
-          <h3>{claimsStats?.pending_over_sla ?? '-'}</h3>
+          <p className="kpi-subline">claims pending {claimsStats?.pending ?? '-'}</p>
         </article>
       </section>
 
@@ -193,6 +256,9 @@ export default function BackofficePage() {
             </button>
             <button type="button" onClick={onEscalateClaimsSla}>
               Escalader claims SLA
+            </button>
+            <button type="button" onClick={onRunShipmentSchedulesDueNow}>
+              Forcer run-due schedules
             </button>
           </div>
 
@@ -229,6 +295,15 @@ export default function BackofficePage() {
                 </strong>
               </div>
             ) : null}
+            {shipmentSchedulesRunResult ? (
+              <div className="data-row">
+                <span>Shipment schedules run-due</span>
+                <strong>
+                  examined {shipmentSchedulesRunResult.examined} / triggered {shipmentSchedulesRunResult.triggered} /
+                  failed {shipmentSchedulesRunResult.failed}
+                </strong>
+              </div>
+            ) : null}
           </div>
         </article>
 
@@ -258,6 +333,14 @@ export default function BackofficePage() {
               </strong>
             </div>
             <div className="data-row">
+              <span>Shipment schedules autorun</span>
+              <strong>
+                {workerStatus?.shipment_schedule_autorun_enabled ? 'on' : 'off'} /{' '}
+                {workerStatus?.shipment_schedule_autorun_interval_seconds ?? '-'}s / limit{' '}
+                {workerStatus?.shipment_schedule_autorun_limit ?? '-'}
+              </strong>
+            </div>
+            <div className="data-row">
               <span>Outbox worker</span>
               <strong>
                 {workerStatus?.outbox_worker_enabled ? 'on' : 'off'} / {workerStatus?.outbox_interval_seconds ?? '-'}s / batch {workerStatus?.outbox_batch_size ?? '-'}
@@ -272,8 +355,14 @@ export default function BackofficePage() {
             {workerStatus?.last_outbox_run_at ? (
               <p className="muted-note">Outbox last run: {workerStatus.last_outbox_run_at}</p>
             ) : null}
+            {workerStatus?.last_shipment_schedule_run_at ? (
+              <p className="muted-note">Shipment schedules last run: {workerStatus.last_shipment_schedule_run_at}</p>
+            ) : null}
             {workerStatus?.last_error ? <p className="error">SMS worker: {workerStatus.last_error}</p> : null}
             {workerStatus?.last_outbox_error ? <p className="error">Outbox: {workerStatus.last_outbox_error}</p> : null}
+            {workerStatus?.last_shipment_schedule_error ? (
+              <p className="error">Shipment schedules: {workerStatus.last_shipment_schedule_error}</p>
+            ) : null}
           </div>
         </article>
       </section>

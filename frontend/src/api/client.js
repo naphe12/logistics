@@ -234,6 +234,55 @@ export async function createShipment(token, payload) {
   })
 }
 
+export async function createShipmentSchedule(token, payload) {
+  return request('/shipments/schedules', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function listShipmentSchedules(
+  token,
+  {
+    activeOnly = false,
+    mine = false,
+    offset = 0,
+    limit = 20,
+    sort = 'next_run_asc',
+  } = {},
+) {
+  const qs = new URLSearchParams()
+  if (activeOnly) qs.set('active_only', 'true')
+  if (mine) qs.set('mine', 'true')
+  qs.set('offset', String(Math.max(0, Number(offset) || 0)))
+  qs.set('limit', String(Math.max(1, Number(limit) || 20)))
+  if (sort) qs.set('sort', String(sort))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/shipments/schedules${suffix}`, { token })
+}
+
+export async function getShipmentSchedule(token, scheduleId) {
+  return request(`/shipments/schedules/${scheduleId}`, { token })
+}
+
+export async function updateShipmentSchedule(token, scheduleId, payload) {
+  return request(`/shipments/schedules/${scheduleId}`, {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function runDueShipmentSchedules(token, { limit = 100 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('limit', String(limit))
+  return request(`/shipments/schedules/run-due?${qs.toString()}`, {
+    method: 'POST',
+    token,
+  })
+}
+
 export async function getShipmentPriceEstimate(
   token,
   { originRelayId, destinationRelayId, declaredValue = null, insuranceOptIn = false },
@@ -667,6 +716,12 @@ export async function getBackofficeOverview(token) {
   return request('/backoffice/overview', { token })
 }
 
+export async function getBackofficeS1OpsKpis(token, windowHours = 24 * 7) {
+  const qs = new URLSearchParams()
+  qs.set('window_hours', String(windowHours))
+  return request(`/backoffice/kpis/s1?${qs.toString()}`, { token })
+}
+
 export async function listBackofficeSmsLogs(token, limit = 100) {
   return request(`/backoffice/logs/sms?limit=${limit}`, { token })
 }
@@ -710,6 +765,15 @@ export async function runBackofficeAutoDetectIncidents(token, delayedHours = 48,
   qs.set('delayed_hours', String(delayedHours))
   qs.set('limit', String(limit))
   return request(`/backoffice/incidents/auto-detect?${qs.toString()}`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function runBackofficeShipmentSchedulesDue(token, limit = 200) {
+  const qs = new URLSearchParams()
+  qs.set('limit', String(limit))
+  return request(`/backoffice/shipments/schedules/run-due?${qs.toString()}`, {
     method: 'POST',
     token,
   })
