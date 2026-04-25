@@ -260,13 +260,16 @@ a {
   padding: clamp(34px, 8vh, 74px) clamp(22px, 4vw, 56px);
   min-height: clamp(360px, 56vh, 640px);
   border-radius: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(95, 178, 241, 0.75);
   background:
     radial-gradient(340px 180px at 12% 8%, rgba(255, 255, 255, 0.24), transparent 60%),
     radial-gradient(380px 210px at 100% 0%, rgba(253, 215, 137, 0.2), transparent 62%),
     linear-gradient(135deg, #123d62 0%, #236ca5 54%, #3f97d5 100%);
   color: #eef7ff;
-  box-shadow: 0 28px 56px rgba(14, 49, 82, 0.3);
+  box-shadow:
+    0 0 0 4px rgba(53, 140, 208, 0.28),
+    0 28px 56px rgba(14, 49, 82, 0.34),
+    inset 0 0 0 1px rgba(189, 227, 255, 0.34);
   display: grid;
   align-content: center;
   gap: 8px;
