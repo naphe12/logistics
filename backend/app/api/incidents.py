@@ -215,6 +215,7 @@ def update_claim_status_endpoint(
             db,
             claim_id,
             status=payload.status,
+            amount_approved=payload.amount_approved,
             resolution_note=payload.resolution_note,
             refunded_payment_id=payload.refunded_payment_id,
         )

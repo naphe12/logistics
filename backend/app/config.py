@@ -92,6 +92,18 @@ OPS_ALERT_SMS_MAX_PER_HOUR = int(os.getenv("OPS_ALERT_SMS_MAX_PER_HOUR", "4"))
 PAYMENT_WEBHOOK_SECRET = os.getenv("PAYMENT_WEBHOOK_SECRET", "")
 PAYMENT_RECONCILE_STALE_MINUTES = int(os.getenv("PAYMENT_RECONCILE_STALE_MINUTES", "30"))
 
+INSURANCE_ENABLED = parse_bool_env("INSURANCE_ENABLED", default=True)
+INSURANCE_PREMIUM_RATE = float(os.getenv("INSURANCE_PREMIUM_RATE", "0.05"))
+INSURANCE_MAX_COVERAGE_BIF = float(os.getenv("INSURANCE_MAX_COVERAGE_BIF", "100000"))
+INSURANCE_LOSS_COVERAGE_RATE = float(os.getenv("INSURANCE_LOSS_COVERAGE_RATE", "0.50"))
+INSURANCE_DAMAGE_COVERAGE_RATE = float(os.getenv("INSURANCE_DAMAGE_COVERAGE_RATE", "0.30"))
+INSURANCE_CLAIM_WINDOW_HOURS = int(os.getenv("INSURANCE_CLAIM_WINDOW_HOURS", "48"))
+INSURANCE_REQUIRE_PROOF = parse_bool_env("INSURANCE_REQUIRE_PROOF", default=True)
+INSURANCE_PROHIBITED_ITEMS = parse_csv_env(
+    "INSURANCE_PROHIBITED_ITEMS",
+    "cash,jewelry,weapons,drugs,explosives,flammables,illegal_items",
+)
+
 CORS_ALLOW_ORIGINS = parse_csv_env(
     "CORS_ALLOW_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,https://react-frontend-staging-a79c.up.railway.app,http://react-frontend-staging-a79c.up.railway.app:5173,https://react-frontend-staging-a79c.up.railway.app:5173",
@@ -106,3 +118,9 @@ GEO_ACTIVE_PROVINCES = parse_csv_env(
     "GEO_ACTIVE_PROVINCES",
     "Bujumbura,Gitega,Butanyerera,Burunga,Buhumuza",
 )
+
+
+def is_dev_login_allowed() -> bool:
+    # Reload local .env to avoid stale behavior during dev when values change.
+    load_local_env_file()
+    return parse_bool_env("AUTH_ALLOW_DEV_LOGIN", default=False)

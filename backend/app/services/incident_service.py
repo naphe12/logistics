@@ -1,5 +1,6 @@
 from uuid import UUID
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.enums import UserTypeEnum
 from sqlalchemy import or_
 from app.schemas.incidents import ClaimCreate, IncidentCreate
 from app.services.audit_service import log_action
+from app.services.insurance_service import InsuranceValidationError, validate_claim_policy
 
 
 class IncidentError(Exception):
@@ -175,12 +177,42 @@ def create_claim(db: Session, payload: ClaimCreate, current_user: User | None = 
         raise IncidentValidationError("Incident not found")
     if incident.shipment_id != payload.shipment_id:
         raise IncidentValidationError("Claim shipment does not match incident shipment")
+    shipment = db.query(Shipment).filter(Shipment.id == payload.shipment_id).first()
+    if not shipment:
+        raise IncidentValidationError("Shipment not found")
+    claim_type = payload.claim_type or incident.incident_type or "other"
+    requested_amount = payload.amount_requested if payload.amount_requested is not None else payload.amount
+    if requested_amount is None:
+        raise IncidentValidationError("amount_requested is required")
+    try:
+        eligible_ceiling = validate_claim_policy(
+            shipment=shipment,
+            claim_type=claim_type,
+            amount_requested=requested_amount,
+            proof_urls=payload.proof_urls,
+        )
+    except InsuranceValidationError as exc:
+        raise IncidentValidationError(str(exc)) from exc
+
     claim = Claim(
         incident_id=payload.incident_id,
         shipment_id=payload.shipment_id,
-        amount=payload.amount,
+        amount=requested_amount,
+        amount_requested=requested_amount,
+        amount_approved=None,
+        claim_type=claim_type,
+        proof_urls=payload.proof_urls,
         status="submitted",
         reason=payload.reason,
+    )
+    db.add(
+        IncidentUpdate(
+            incident_id=payload.incident_id,
+            message=(
+                f"Claim submitted ({claim_type}), requested={requested_amount}, "
+                f"eligible_ceiling={eligible_ceiling}."
+            ),
+        )
     )
     db.add(claim)
     log_action(db, entity="claims", action="create")
@@ -252,6 +284,7 @@ def update_claim_status(
     claim_id: UUID,
     *,
     status: str,
+    amount_approved: Decimal | None = None,
     resolution_note: str | None = None,
     refunded_payment_id: UUID | None = None,
 ) -> Claim:
@@ -261,11 +294,34 @@ def update_claim_status(
     claim = db.query(Claim).filter(Claim.id == claim_id).first()
     if not claim:
         raise IncidentNotFoundError("Claim not found")
+    allowed_transitions = {
+        "submitted": {"reviewing", "rejected"},
+        "reviewing": {"approved", "rejected"},
+        "approved": {"paid", "rejected"},
+        "rejected": set(),
+        "paid": set(),
+    }
+    current_status = (claim.status or "submitted").strip().lower()
+    if status not in allowed_transitions.get(current_status, set()) and status != current_status:
+        raise IncidentValidationError(f"Invalid claim transition: {current_status} -> {status}")
+
+    if amount_approved is not None:
+        if status not in {"approved", "paid"}:
+            raise IncidentValidationError("amount_approved is only allowed for approved/paid statuses")
+        requested = claim.amount_requested or claim.amount
+        if requested is not None and amount_approved > requested:
+            raise IncidentValidationError("amount_approved cannot exceed amount_requested")
+        claim.amount_approved = amount_approved
+    elif status in {"approved", "paid"} and claim.amount_approved is None:
+        claim.amount_approved = claim.amount_requested or claim.amount
+
     claim.status = status
     if resolution_note is not None:
         claim.resolution_note = resolution_note
     if refunded_payment_id is not None:
         claim.refunded_payment_id = refunded_payment_id
+    if status == "paid" and claim.amount_approved is None:
+        raise IncidentValidationError("Cannot mark paid without approved amount")
     log_action(db, entity="claims", action="status_update")
     db.commit()
     db.refresh(claim)

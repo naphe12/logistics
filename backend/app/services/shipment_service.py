@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from statistics import median
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from app.services.notification_service import queue_and_send_sms
 from app.realtime.events import emit_shipment_status_update
 from app.enums import UserTypeEnum
 from app.models.users import User
+from app.services.insurance_service import compute_insurance_quote
 
 
 class ShipmentNotFoundError(Exception):
@@ -67,6 +69,10 @@ def create_shipment(
 ) -> Shipment:
     origin_relay_id = payload.origin_relay_id or payload.origin
     destination_relay_id = payload.destination_relay_id or payload.destination
+    insurance_quote = compute_insurance_quote(
+        declared_value=payload.declared_value,
+        insurance_opt_in=payload.insurance_opt_in,
+    )
 
     shipment = Shipment(
         shipment_no=generate_shipment_no(),
@@ -81,6 +87,9 @@ def create_shipment(
         origin=origin_relay_id,
         destination=destination_relay_id,
         status="created",
+        declared_value=insurance_quote.declared_value,
+        insurance_fee=insurance_quote.insurance_fee,
+        coverage_amount=insurance_quote.coverage_amount,
         extra=payload.extra,
     )
     db.add(shipment)
@@ -97,10 +106,17 @@ def create_shipment(
 
     _, raw_pickup_code = create_pickup_code(db, shipment.id)
 
+    insurance_hint = ""
+    if insurance_quote.insurance_opt_in and insurance_quote.insurance_fee > 0:
+        insurance_hint = (
+            f" Assurance activee: prime {insurance_quote.insurance_fee} BIF, "
+            f"couverture max {insurance_quote.coverage_amount} BIF."
+        )
+
     queue_and_send_sms(
         db,
         payload.sender_phone,
-        f"Colis {shipment.shipment_no} cree avec succes.",
+        f"Colis {shipment.shipment_no} cree avec succes.{insurance_hint}",
         background_tasks=background_tasks,
     )
     queue_and_send_sms(
@@ -118,6 +134,25 @@ def create_shipment(
         relay_id=origin_relay_id,
     )
     return shipment
+
+
+def get_insurance_quote(
+    *,
+    declared_value: Decimal | float | int | str | None,
+    insurance_opt_in: bool,
+) -> dict[str, object]:
+    quote = compute_insurance_quote(
+        declared_value=Decimal(str(declared_value)) if declared_value is not None else None,
+        insurance_opt_in=insurance_opt_in,
+    )
+    return {
+        "declared_value": quote.declared_value,
+        "insurance_opt_in": quote.insurance_opt_in,
+        "premium_rate": quote.premium_rate,
+        "insurance_fee": quote.insurance_fee,
+        "coverage_amount": quote.coverage_amount,
+        "max_coverage": quote.max_coverage,
+    }
 
 
 def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpdate) -> Shipment:

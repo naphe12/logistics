@@ -48,12 +48,16 @@ class IncidentUpdateOut(BaseModel):
 class ClaimCreate(BaseModel):
     incident_id: UUID
     shipment_id: UUID
-    amount: Decimal = Field(gt=0)
+    amount_requested: Decimal | None = Field(default=None, gt=0)
+    amount: Decimal | None = Field(default=None, gt=0)
+    claim_type: str | None = Field(default=None, pattern=r"^(lost|damaged|partial_loss|other)$")
+    proof_urls: list[str] = Field(default_factory=list, max_length=10)
     reason: str = Field(min_length=2, max_length=4000)
 
 
 class ClaimUpdateStatusRequest(BaseModel):
     status: str = Field(pattern=r"^(submitted|reviewing|approved|rejected|paid)$")
+    amount_approved: Decimal | None = Field(default=None, ge=0)
     resolution_note: str | None = Field(default=None, max_length=4000)
     refunded_payment_id: UUID | None = None
 
@@ -63,7 +67,11 @@ class ClaimOut(BaseModel):
     incident_id: UUID | None = None
     shipment_id: UUID | None = None
     amount: Decimal | None = None
+    amount_requested: Decimal | None = None
+    amount_approved: Decimal | None = None
     status: str | None = None
+    claim_type: str | None = None
+    proof_urls: list[str] | None = None
     reason: str | None = None
     resolution_note: str | None = None
     refunded_payment_id: UUID | None = None

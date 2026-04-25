@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.database import get_db
-from app.config import AUTH_ALLOW_DEV_LOGIN
+from app.config import is_dev_login_allowed
 from app.dependencies import get_current_user, require_roles
 from app.enums import UserTypeEnum
 from app.models.users import User
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    if not AUTH_ALLOW_DEV_LOGIN:
+    if not is_dev_login_allowed():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Direct login disabled. Use OTP flow.",

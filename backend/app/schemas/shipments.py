@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import date, datetime
@@ -15,6 +16,8 @@ class ShipmentCreate(BaseModel):
     delivery_note: str | None = Field(default=None, max_length=500)
     origin: UUID | None = None
     destination: UUID | None = None
+    declared_value: Decimal | None = Field(default=None, ge=0)
+    insurance_opt_in: bool = False
     extra: dict[str, Any] | None = None
 
 
@@ -70,6 +73,9 @@ class ShipmentOut(BaseModel):
     delivery_address_id: UUID | None = None
     delivery_note: str | None = None
     status: str | None = None
+    declared_value: Decimal | None = None
+    insurance_fee: Decimal | None = None
+    coverage_amount: Decimal | None = None
     extra: dict[str, Any] | None = None
     created_at: datetime
 
@@ -195,3 +201,12 @@ class MyShipmentsDashboardOut(BaseModel):
     delivered: int
     delayed_risk: int
     last_30d_created: int
+
+
+class ShipmentInsuranceQuoteOut(BaseModel):
+    declared_value: Decimal
+    insurance_opt_in: bool
+    premium_rate: Decimal
+    insurance_fee: Decimal
+    coverage_amount: Decimal
+    max_coverage: Decimal

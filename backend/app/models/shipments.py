@@ -23,6 +23,9 @@ class Shipment(Base):
     origin: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     destination: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("logix.relay_points.id"))
     status: Mapped[str | None] = mapped_column(String(40), ForeignKey("logix.shipment_statuses.code"))
+    declared_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    insurance_fee: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    coverage_amount: Mapped[float | None] = mapped_column(Numeric(12, 2))
     extra: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

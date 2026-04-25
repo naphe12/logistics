@@ -25,6 +25,7 @@ from app.schemas.shipments import (
     ShipmentEtaOut,
     ShipmentExtraUpdate,
     ShipmentOverviewStats,
+    ShipmentInsuranceQuoteOut,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
 )
@@ -46,6 +47,7 @@ from app.services.shipment_service import (
     auto_detect_stagnation_incidents,
     get_my_shipments_dashboard,
     get_shipment_eta,
+    get_insurance_quote,
     update_shipment_extra,
     update_shipment_status,
     ShipmentNotFoundError,
@@ -92,6 +94,25 @@ def create_shipment_endpoint(
     ),
 ):
     return create_shipment(db, payload, background_tasks=background_tasks)
+
+
+@router.get("/insurance/quote", response_model=ShipmentInsuranceQuoteOut)
+def shipment_insurance_quote_endpoint(
+    declared_value: float = Query(..., ge=0),
+    insurance_opt_in: bool = Query(default=True),
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    return get_insurance_quote(
+        declared_value=declared_value,
+        insurance_opt_in=insurance_opt_in,
+    )
 
 
 @router.get("", response_model=list[ShipmentOut])
