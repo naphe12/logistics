@@ -8,6 +8,10 @@ from app.config import (
     CLAIMS_AUTO_ESCALATE_ENABLED,
     CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
     CLAIMS_AUTO_ESCALATE_LIMIT,
+    OUTBOX_MAX_ATTEMPTS,
+    OUTBOX_WORKER_BATCH,
+    OUTBOX_WORKER_ENABLED,
+    OUTBOX_WORKER_INTERVAL_SECONDS,
     OPS_ALERT_AUTONOTIFY_ENABLED,
     OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS,
     OPS_ALERT_SMS_MAX_PER_HOUR,
@@ -22,6 +26,7 @@ from app.database import SessionLocal
 from app.services.backoffice_service import notify_critical_alerts_sms
 from app.services.incident_service import auto_escalate_stale_claims
 from app.services.notification_service import process_pending_sms
+from app.services.outbox_service import get_outbox_status_counts, process_event_outbox
 
 
 _worker_thread: threading.Thread | None = None
@@ -43,9 +48,17 @@ _status: dict[str, object] = {
     "claims_auto_escalate_interval_seconds": CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
     "claims_auto_escalate_limit": CLAIMS_AUTO_ESCALATE_LIMIT,
     "claims_auto_escalate_stale_hours": INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+    "outbox_worker_enabled": OUTBOX_WORKER_ENABLED,
+    "outbox_interval_seconds": OUTBOX_WORKER_INTERVAL_SECONDS,
+    "outbox_batch_size": OUTBOX_WORKER_BATCH,
+    "outbox_max_attempts": OUTBOX_MAX_ATTEMPTS,
     "last_run_at": None,
     "last_result": None,
     "last_error": None,
+    "last_outbox_run_at": None,
+    "last_outbox_result": None,
+    "last_outbox_error": None,
+    "outbox_status_counts": None,
     "last_ops_alert_run_at": None,
     "last_ops_alert_result": None,
     "last_ops_alert_error": None,
@@ -130,6 +143,7 @@ def _run_loop() -> None:
 
     next_ops_alert_check_at = datetime.now(UTC)
     next_claims_escalation_check_at = datetime.now(UTC)
+    next_outbox_check_at = datetime.now(UTC)
     while not _worker_stop_event.is_set():
         if not leader_acquired:
             # No leadership: wait and retry lock acquisition.
@@ -150,6 +164,31 @@ def _run_loop() -> None:
                     last_error=str(exc)[:2000],
                 )
             continue
+
+        if OUTBOX_WORKER_ENABLED and datetime.now(UTC) >= next_outbox_check_at:
+            outbox_db = SessionLocal()
+            try:
+                outbox_result = process_event_outbox(
+                    outbox_db,
+                    limit=OUTBOX_WORKER_BATCH,
+                    max_attempts=OUTBOX_MAX_ATTEMPTS,
+                )
+                outbox_counts = get_outbox_status_counts(outbox_db)
+                _set_status(
+                    last_outbox_run_at=_utc_iso_now(),
+                    last_outbox_result=outbox_result,
+                    last_outbox_error=None,
+                    outbox_status_counts=outbox_counts,
+                )
+            except Exception as exc:
+                _set_status(
+                    last_outbox_run_at=_utc_iso_now(),
+                    last_outbox_error=str(exc)[:2000],
+                )
+            finally:
+                outbox_db.close()
+            outbox_interval = max(3, OUTBOX_WORKER_INTERVAL_SECONDS)
+            next_outbox_check_at = datetime.now(UTC) + timedelta(seconds=outbox_interval)
 
         run_db = SessionLocal()
         try:
@@ -243,6 +282,10 @@ def start_sms_queue_worker() -> None:
         claims_auto_escalate_interval_seconds=CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
         claims_auto_escalate_limit=CLAIMS_AUTO_ESCALATE_LIMIT,
         claims_auto_escalate_stale_hours=INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+        outbox_worker_enabled=OUTBOX_WORKER_ENABLED,
+        outbox_interval_seconds=OUTBOX_WORKER_INTERVAL_SECONDS,
+        outbox_batch_size=OUTBOX_WORKER_BATCH,
+        outbox_max_attempts=OUTBOX_MAX_ATTEMPTS,
     )
     _worker_thread = threading.Thread(target=_run_loop, name="sms-queue-worker", daemon=True)
     _worker_thread.start()

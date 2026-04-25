@@ -18,9 +18,17 @@ const statusOptions = [
   'delivered',
 ]
 
+function badgeBySocketState(state) {
+  if (state === 'connected') return 'success'
+  if (state === 'error' || state === 'closed') return 'danger'
+  if (state === 'connecting') return 'warning'
+  return 'info'
+}
+
 export default function TrackingPage() {
   const { token } = useAuth()
   const wsRef = useRef(null)
+
   const [health, setHealth] = useState('idle')
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
@@ -43,10 +51,8 @@ export default function TrackingPage() {
     code: '',
     relay_id: '',
   })
-  const liveHeadline = useMemo(() => {
-    if (!liveShipmentId) return '-'
-    return liveShipmentId
-  }, [liveShipmentId])
+
+  const liveHeadline = useMemo(() => liveShipmentId || '-', [liveShipmentId])
 
   useEffect(() => {
     if (!token || !liveShipmentId) {
@@ -64,15 +70,13 @@ export default function TrackingPage() {
       onClose: () => setSocketState('closed'),
       onError: () => setSocketState('error'),
       onMessage: (payload) => {
-        setLiveEvents((prev) => [payload, ...prev].slice(0, 30))
+        setLiveEvents((prev) => [payload, ...prev].slice(0, 40))
       },
     })
     wsRef.current = socket
     return () => {
       socket.close()
-      if (wsRef.current === socket) {
-        wsRef.current = null
-      }
+      if (wsRef.current === socket) wsRef.current = null
     }
   }, [token, liveShipmentId])
 
@@ -91,12 +95,8 @@ export default function TrackingPage() {
     setError('')
     setResult('')
     try {
-      const payload = {
-        status: form.status,
-        event_type: form.event_type,
-      }
+      const payload = { status: form.status, event_type: form.event_type }
       if (form.relay_id) payload.relay_id = form.relay_id
-
       const updated = await updateShipmentStatus(token, form.shipment_id, payload)
       setResult(updated.status || 'updated')
       setSocketInput((prev) => prev || form.shipment_id)
@@ -112,18 +112,17 @@ export default function TrackingPage() {
     setPickupConfirmation('')
     try {
       const res = await validatePickupCode(token, pickupForm.shipment_id, pickupForm.code)
-      if (res.valid) {
-        setPickupValidation('Code valide')
-      } else {
-        setPickupValidation(`${res.message}${res.error_code ? ` (${res.error_code})` : ''}`)
-      }
+      setPickupValidation(
+        res.valid
+          ? 'Code valide'
+          : `${res.message}${res.error_code ? ` (${res.error_code})` : ''}`,
+      )
     } catch (err) {
       setError(err.message)
     }
   }
 
-  async function onConfirmPickup(e) {
-    e.preventDefault()
+  async function onConfirmPickup() {
     setError('')
     setPickupConfirmation('')
     try {
@@ -133,11 +132,13 @@ export default function TrackingPage() {
       }
       if (pickupForm.relay_id) payload.relay_id = pickupForm.relay_id
       const res = await confirmPickupCode(token, pickupForm.shipment_id, payload)
+      setPickupConfirmation(
+        res.confirmed
+          ? `Remise confirmee. Statut: ${res.status || 'delivered'}`
+          : `${res.message}${res.error_code ? ` (${res.error_code})` : ''}`,
+      )
       if (res.confirmed) {
-        setPickupConfirmation(`Remise confirmee. Statut: ${res.status || 'delivered'}`)
         setSocketInput((prev) => prev || pickupForm.shipment_id)
-      } else {
-        setPickupConfirmation(`${res.message}${res.error_code ? ` (${res.error_code})` : ''}`)
       }
     } catch (err) {
       setError(err.message)
@@ -170,209 +171,243 @@ export default function TrackingPage() {
   }
 
   return (
-    <section className="page-grid two-cols ops-grid">
-      <article className="panel">
-        <p className="eyebrow">Monitoring</p>
-        <h2>Sante de l API</h2>
-        <button type="button" onClick={onHealth}>
-          Verifier /health
-        </button>
+    <section className="page-grid">
+      <article className="page-banner">
+        <p className="eyebrow">Ops Cockpit</p>
+        <h2>Tracking live, workflow statut et remise</h2>
         <p>
-          Etat actuel: <strong>{health}</strong>
+          Console terrain pour executer les scans metier, verifier les codes de retrait et monitorer les
+          evenements temps reel.
         </p>
       </article>
 
-      <article className="panel">
-        <p className="eyebrow">Tracking</p>
-        <h2>Mise a jour de statut</h2>
-        <form className="form" onSubmit={onUpdate}>
-          <label>
-            Shipment ID
-            <input
-              placeholder="UUID"
-              value={form.shipment_id}
-              onChange={(e) => setForm((s) => ({ ...s, shipment_id: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Nouveau statut
-            <select
-              value={form.status}
-              onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}
-            >
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Event type
-            <input
-              placeholder="shipment_in_transit"
-              value={form.event_type}
-              onChange={(e) => setForm((s) => ({ ...s, event_type: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Relay ID (optionnel)
-            <input
-              placeholder="UUID relay"
-              value={form.relay_id}
-              onChange={(e) => setForm((s) => ({ ...s, relay_id: e.target.value }))}
-            />
-          </label>
-          <button type="submit" disabled={!token}>
-            Mettre a jour
-          </button>
-        </form>
-        <p>
-          Resultat: <strong>{result || '-'}</strong>
-        </p>
-      </article>
+      <section className="kpi-grid">
+        <article className="kpi-card">
+          <p>API Health</p>
+          <h3>{health}</h3>
+          <p className="kpi-subline">Ping service principal</p>
+        </article>
+        <article className="kpi-card">
+          <p>Socket state</p>
+          <h3>{socketState}</h3>
+          <p className="kpi-subline">
+            <span className={`badge ${badgeBySocketState(socketState)}`}>{socketState}</span>
+          </p>
+        </article>
+        <article className="kpi-card">
+          <p>Shipment live</p>
+          <h3 className="mono">{liveHeadline}</h3>
+          <p className="kpi-subline">Canal en ecoute</p>
+        </article>
+        <article className="kpi-card">
+          <p>Events recents</p>
+          <h3>{liveEvents.length}</h3>
+          <p className="kpi-subline">Fenetre glissante x40</p>
+        </article>
+      </section>
 
-      <article className="panel">
-        <p className="eyebrow">Retrait Agent</p>
-        <h2>Validation code et remise</h2>
-        <form className="form" onSubmit={onValidatePickupCode}>
-          <label>
-            Shipment ID
-            <input
-              placeholder="UUID"
-              value={pickupForm.shipment_id}
-              onChange={(e) => setPickupForm((s) => ({ ...s, shipment_id: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Code retrait
-            <input
-              placeholder="4 chiffres"
-              value={pickupForm.code}
-              onChange={(e) => setPickupForm((s) => ({ ...s, code: e.target.value }))}
-              minLength={4}
-              maxLength={8}
-              required
-            />
-          </label>
-          <label>
-            Relay ID (optionnel)
-            <input
-              placeholder="UUID relay"
-              value={pickupForm.relay_id}
-              onChange={(e) => setPickupForm((s) => ({ ...s, relay_id: e.target.value }))}
-            />
-          </label>
-          <div className="ops-actions">
-            <button type="submit" disabled={!token}>
-              Verifier le code
-            </button>
-            <button type="button" disabled={!token} onClick={onConfirmPickup}>
-              Confirmer la remise
-            </button>
-          </div>
-        </form>
-        <p>
-          Validation: <strong>{pickupValidation || '-'}</strong>
-        </p>
-        <p>
-          Confirmation: <strong>{pickupConfirmation || '-'}</strong>
-        </p>
-      </article>
-
-      <article className="panel">
-        <p className="eyebrow">Live Tracking</p>
-        <h2>WebSocket colis</h2>
-        <form className="form" onSubmit={onConnectLive}>
-          <label>
-            Shipment ID a ecouter
-            <input
-              placeholder="UUID"
-              value={socketInput}
-              onChange={(e) => setSocketInput(e.target.value)}
-              required
-            />
-          </label>
-          <div className="ops-actions">
-            <button type="submit" disabled={!token}>
-              Connecter
-            </button>
-            <button type="button" onClick={onDisconnectLive} disabled={!liveShipmentId}>
-              Deconnecter
-            </button>
-          </div>
-        </form>
-        <p>
-          Socket: <strong>{socketState}</strong>
-        </p>
-        <p>
-          Shipment live: <strong>{liveHeadline}</strong>
-        </p>
-        <div>
-          {liveEvents.length === 0 ? (
-            <p>Aucun evenement live pour le moment.</p>
-          ) : (
-            liveEvents.map((event, index) => (
-              <p key={`${event.timestamp || 'no-ts'}-${index}`}>
-                [{event.timestamp || '-'}] {event.event_type || event.kind || 'event'} - {event.status || '-'}
-              </p>
-            ))
-          )}
-        </div>
-      </article>
-
-      <article className="panel">
-        <p className="eyebrow">ETA</p>
-        <h2>Estimation delai livraison</h2>
-        <form className="form" onSubmit={onFetchEta}>
-          <label>
-            Shipment ID
-            <input
-              placeholder="UUID"
-              value={etaShipmentId}
-              onChange={(e) => setEtaShipmentId(e.target.value)}
-              required
-            />
-          </label>
-          <button type="submit" disabled={!token}>
-            Calculer ETA
-          </button>
-        </form>
-        {eta ? (
-          <div className="relay-item">
-            <p>
-              <strong>{eta.shipment_no || eta.shipment_id}</strong>
-            </p>
-            <p>
-              status: {eta.status} | ETA: {eta.remaining_hours}h | confidence: {eta.confidence}
-            </p>
-            <p>
-              base: {eta.base_remaining_hours ?? eta.remaining_hours}h | penalties: {eta.penalty_hours || 0}h
-            </p>
-            <p>estimated_delivery_at: {eta.estimated_delivery_at}</p>
-            <p>model: {eta.basis}</p>
-            {eta.historical_samples ? (
-              <p>
-                history: {eta.historical_samples} shipments | median: {eta.historical_median_hours}h
-              </p>
-            ) : null}
-            {Array.isArray(eta.factors) && eta.factors.length > 0 ? (
-              <div>
-                {eta.factors.map((factor) => (
-                  <p key={factor.code}>
-                    risk: {factor.label} (+{factor.hours}h)
-                  </p>
+      <section className="page-grid two-cols ops-grid">
+        <article className="panel">
+          <h3>Statut colis</h3>
+          <form className="form" onSubmit={onUpdate}>
+            <label>
+              Shipment ID
+              <input
+                placeholder="UUID"
+                value={form.shipment_id}
+                onChange={(e) => setForm((s) => ({ ...s, shipment_id: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Nouveau statut
+              <select value={form.status} onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
                 ))}
-              </div>
-            ) : null}
+              </select>
+            </label>
+            <label>
+              Event type
+              <input
+                placeholder="shipment_in_transit"
+                value={form.event_type}
+                onChange={(e) => setForm((s) => ({ ...s, event_type: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Relay ID (optionnel)
+              <input
+                placeholder="UUID relay"
+                value={form.relay_id}
+                onChange={(e) => setForm((s) => ({ ...s, relay_id: e.target.value }))}
+              />
+            </label>
+            <div className="ops-actions">
+              <button type="submit" disabled={!token}>
+                Mettre a jour
+              </button>
+              <button type="button" className="button-secondary" onClick={onHealth}>
+                Verifier API
+              </button>
+            </div>
+          </form>
+          <div className="surface-soft" style={{ marginTop: 10 }}>
+            <p>
+              Resultat: <strong>{result || '-'}</strong>
+            </p>
           </div>
-        ) : (
-          <p>Aucune estimation calculee.</p>
-        )}
-      </article>
+        </article>
+
+        <article className="panel">
+          <h3>Remise avec code pickup</h3>
+          <form className="form" onSubmit={onValidatePickupCode}>
+            <label>
+              Shipment ID
+              <input
+                placeholder="UUID"
+                value={pickupForm.shipment_id}
+                onChange={(e) => setPickupForm((s) => ({ ...s, shipment_id: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Code retrait
+              <input
+                placeholder="4 chiffres"
+                value={pickupForm.code}
+                onChange={(e) => setPickupForm((s) => ({ ...s, code: e.target.value }))}
+                minLength={4}
+                maxLength={8}
+                required
+              />
+            </label>
+            <label>
+              Relay ID (optionnel)
+              <input
+                placeholder="UUID relay"
+                value={pickupForm.relay_id}
+                onChange={(e) => setPickupForm((s) => ({ ...s, relay_id: e.target.value }))}
+              />
+            </label>
+            <div className="ops-actions">
+              <button type="submit" disabled={!token}>
+                Verifier
+              </button>
+              <button type="button" onClick={onConfirmPickup} disabled={!token}>
+                Confirmer remise
+              </button>
+            </div>
+          </form>
+          <div className="stack-compact" style={{ marginTop: 10 }}>
+            <div className="data-row">
+              <span>Validation</span>
+              <strong>{pickupValidation || '-'}</strong>
+            </div>
+            <div className="data-row">
+              <span>Confirmation</span>
+              <strong>{pickupConfirmation || '-'}</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section className="page-grid two-cols ops-grid">
+        <article className="panel">
+          <h3>Flux live WebSocket</h3>
+          <form className="form" onSubmit={onConnectLive}>
+            <label>
+              Shipment ID a ecouter
+              <input
+                placeholder="UUID"
+                value={socketInput}
+                onChange={(e) => setSocketInput(e.target.value)}
+                required
+              />
+            </label>
+            <div className="ops-actions">
+              <button type="submit" disabled={!token}>
+                Connecter
+              </button>
+              <button type="button" className="button-secondary" onClick={onDisconnectLive}>
+                Deconnecter
+              </button>
+            </div>
+          </form>
+          <div className="relay-list list-scroll" style={{ marginTop: 10 }}>
+            {liveEvents.length === 0 ? <p>Aucun evenement live pour le moment.</p> : null}
+            {liveEvents.map((event, index) => (
+              <div key={`${event.timestamp || 'no-ts'}-${index}`} className="relay-item">
+                <p className="mono">[{event.timestamp || '-'}]</p>
+                <p>
+                  <strong>{event.event_type || event.kind || 'event'}</strong>
+                </p>
+                <p>status: {event.status || '-'}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h3>ETA livraison</h3>
+          <form className="form" onSubmit={onFetchEta}>
+            <label>
+              Shipment ID
+              <input
+                placeholder="UUID"
+                value={etaShipmentId}
+                onChange={(e) => setEtaShipmentId(e.target.value)}
+                required
+              />
+            </label>
+            <button type="submit" disabled={!token}>
+              Calculer ETA
+            </button>
+          </form>
+          {eta ? (
+            <div className="stack-compact" style={{ marginTop: 10 }}>
+              <div className="data-row">
+                <span>Colis</span>
+                <strong className="mono">{eta.shipment_no || eta.shipment_id}</strong>
+              </div>
+              <div className="data-row">
+                <span>Status / confidence</span>
+                <strong>
+                  {eta.status} / {eta.confidence}
+                </strong>
+              </div>
+              <div className="data-row">
+                <span>ETA</span>
+                <strong>{eta.remaining_hours}h</strong>
+              </div>
+              <div className="data-row">
+                <span>Base + penalties</span>
+                <strong>
+                  {eta.base_remaining_hours ?? eta.remaining_hours}h + {eta.penalty_hours || 0}h
+                </strong>
+              </div>
+              <div className="surface-soft">
+                <p className="mono">estimated_delivery_at: {eta.estimated_delivery_at}</p>
+              </div>
+              {Array.isArray(eta.factors) && eta.factors.length > 0 ? (
+                <div className="stack-compact">
+                  {eta.factors.map((factor) => (
+                    <div key={factor.code} className="data-row">
+                      <span>{factor.label}</span>
+                      <strong>+{factor.hours}h</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p>Aucune estimation calculee.</p>
+          )}
+        </article>
+      </section>
 
       {error ? <p className="error">{error}</p> : null}
     </section>

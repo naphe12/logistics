@@ -111,13 +111,15 @@ export default function ShipmentsPage() {
 
   return (
     <section className="page-grid">
-      <article className="panel">
+      <article className="page-banner">
         <p className="eyebrow">Expedition Studio</p>
         <h2>Creation colis professionnelle</h2>
         <p>
           Interface complete avec parcours relais, adresse de livraison, valeur declaree et assurance optionnelle.
         </p>
-        <p className="status-line">Mode actif: {roleText}</p>
+        <p className="status-line">
+          <span className="badge info">Mode actif</span> {roleText}
+        </p>
       </article>
 
       <section className="page-grid two-cols shipment-create-layout">
@@ -197,7 +199,7 @@ export default function ShipmentsPage() {
             </fieldset>
 
             <fieldset>
-              <legend>Assurance & valeur</legend>
+              <legend>Assurance et valeur</legend>
               <label>
                 Valeur declaree (BIF)
                 <input
@@ -226,27 +228,36 @@ export default function ShipmentsPage() {
 
         <article className="panel shipment-preview-panel">
           <h3>Resume intelligent</h3>
-          <div className="shipment-preview-grid">
+          <div className="split-highlight">
             <div>
               <p className="eyebrow">Route</p>
-              <p>
-                {selectedOrigin?.name || 'Origine non definie'} →{' '}
-                {selectedDestination?.name || 'Destination non definie'}
-              </p>
+              <div className="highlight-stat">
+                <p>Trajet relais</p>
+                <strong>
+                  {selectedOrigin?.name || 'Origine non definie'} -&gt;{' '}
+                  {selectedDestination?.name || 'Destination non definie'}
+                </strong>
+              </div>
+              <p className="muted-note">Selectionne origine et destination pour verrouiller le parcours.</p>
             </div>
             <div>
               <p className="eyebrow">Assurance</p>
               {loadingQuote ? <p>Calcul prime...</p> : null}
               {!loadingQuote && insuranceQuote ? (
-                <>
-                  <p>
-                    Prime: <strong>{insuranceQuote.insurance_fee} BIF</strong>
-                  </p>
-                  <p>
-                    Couverture: <strong>{insuranceQuote.coverage_amount} BIF</strong>
-                  </p>
-                  <p>Taux: {(Number(insuranceQuote.premium_rate) * 100).toFixed(2)}%</p>
-                </>
+                <div className="data-grid">
+                  <div className="data-row">
+                    <span>Prime</span>
+                    <strong>{insuranceQuote.insurance_fee} BIF</strong>
+                  </div>
+                  <div className="data-row">
+                    <span>Couverture</span>
+                    <strong>{insuranceQuote.coverage_amount} BIF</strong>
+                  </div>
+                  <div className="data-row">
+                    <span>Taux</span>
+                    <strong>{(Number(insuranceQuote.premium_rate) * 100).toFixed(2)}%</strong>
+                  </div>
+                </div>
               ) : (
                 <p>Renseigne une valeur declaree pour simuler.</p>
               )}
@@ -266,14 +277,24 @@ export default function ShipmentsPage() {
           <div className="shipment-result">
             <p className="eyebrow">Resultat creation</p>
             {createdShipment ? (
-              <>
-                <p>
-                  Numero colis: <strong>{createdShipment.shipment_no}</strong>
-                </p>
-                <p>Status: {createdShipment.status || 'created'}</p>
-                <p>Coverage: {createdShipment.coverage_amount ?? '-'} BIF</p>
-                <p>Insurance fee: {createdShipment.insurance_fee ?? '-'} BIF</p>
-              </>
+              <div className="stack-compact">
+                <div className="data-row">
+                  <span>Numero colis</span>
+                  <strong className="mono">{createdShipment.shipment_no}</strong>
+                </div>
+                <div className="data-row">
+                  <span>Statut</span>
+                  <span className="badge success">{createdShipment.status || 'created'}</span>
+                </div>
+                <div className="data-row">
+                  <span>Couverture</span>
+                  <strong>{createdShipment.coverage_amount ?? '-'} BIF</strong>
+                </div>
+                <div className="data-row">
+                  <span>Prime assurance</span>
+                  <strong>{createdShipment.insurance_fee ?? '-'} BIF</strong>
+                </div>
+              </div>
             ) : (
               <p>Aucun colis cree dans cette session.</p>
             )}

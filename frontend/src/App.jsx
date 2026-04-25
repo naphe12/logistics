@@ -82,7 +82,7 @@ export default function App() {
           <Route
             path="/shipments"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['client', 'agent', 'admin']}>
                 <ShipmentsPage />
               </ProtectedRoute>
             }
@@ -90,7 +90,7 @@ export default function App() {
           <Route
             path="/relays"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
                 <RelaysPage />
               </ProtectedRoute>
             }
@@ -98,7 +98,7 @@ export default function App() {
           <Route
             path="/tracking"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
                 <TrackingPage />
               </ProtectedRoute>
             }
@@ -106,7 +106,7 @@ export default function App() {
           <Route
             path="/transport"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
                 <TransportPage />
               </ProtectedRoute>
             }
@@ -130,7 +130,7 @@ export default function App() {
           <Route
             path="/backoffice"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <BackofficePage />
               </ProtectedRoute>
             }
@@ -138,7 +138,7 @@ export default function App() {
           <Route
             path="/ussd-simulator"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
                 <UssdSimulatorPage />
               </ProtectedRoute>
             }

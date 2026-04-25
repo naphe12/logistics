@@ -113,9 +113,17 @@ class SmsWorkerStatusOut(BaseModel):
     claims_auto_escalate_interval_seconds: int
     claims_auto_escalate_limit: int
     claims_auto_escalate_stale_hours: int
+    outbox_worker_enabled: bool
+    outbox_interval_seconds: int
+    outbox_batch_size: int
+    outbox_max_attempts: int
     last_run_at: str | None = None
     last_result: dict[str, int] | None = None
     last_error: str | None = None
+    last_outbox_run_at: str | None = None
+    last_outbox_result: dict[str, int] | None = None
+    last_outbox_error: str | None = None
+    outbox_status_counts: dict[str, int] | None = None
     last_ops_alert_run_at: str | None = None
     last_ops_alert_result: dict[str, Any] | None = None
     last_ops_alert_error: str | None = None

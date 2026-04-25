@@ -508,6 +508,33 @@ export async function updateClaimStatus(token, claimId, payload) {
   })
 }
 
+export async function getClaimsOpsStats(token, { staleHours = 24 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('stale_hours', String(staleHours))
+  return request(`/incidents/claims/stats?${qs.toString()}`, { token })
+}
+
+export async function autoEscalateClaims(
+  token,
+  { staleHours = 24, limit = 200, dryRun = false, notifyInternal = true } = {},
+) {
+  const qs = new URLSearchParams()
+  qs.set('stale_hours', String(staleHours))
+  qs.set('limit', String(limit))
+  qs.set('dry_run', dryRun ? 'true' : 'false')
+  qs.set('notify_internal', notifyInternal ? 'true' : 'false')
+  return request(`/incidents/claims/ops/auto-escalate?${qs.toString()}`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function getClaimsFinanceReport(token, { months = 6 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('months', String(months))
+  return request(`/incidents/claims/stats/finance?${qs.toString()}`, { token })
+}
+
 export async function getBackofficeOverview(token) {
   return request('/backoffice/overview', { token })
 }
