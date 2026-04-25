@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const navByRole = {
@@ -38,9 +38,15 @@ const roleLabels = {
 
 export default function Sidebar() {
   const { logout, dashboardRole, userProfile } = useAuth()
+  const navigate = useNavigate()
   const items = navByRole[dashboardRole] || navByRole.client
   const displayName = [userProfile?.first_name, userProfile?.last_name].filter(Boolean).join(' ').trim()
   const phone = userProfile?.phone_e164 || ''
+
+  function onLogout() {
+    logout()
+    navigate('/', { replace: true })
+  }
 
   return (
     <aside className="sidebar">
@@ -73,7 +79,7 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <button type="button" className="logout-btn" onClick={logout}>
+      <button type="button" className="logout-btn" onClick={onLogout}>
         Deconnexion
       </button>
     </aside>

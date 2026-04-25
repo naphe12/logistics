@@ -842,7 +842,7 @@ button:disabled {
   margin: 0 auto;
 }
 
-.public-home-minimal {
+.public-home {
   min-height: calc(100vh - 44px);
   display: grid;
   align-items: start;
@@ -853,21 +853,81 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.38);
   background:
     radial-gradient(280px 140px at 100% -10%, rgba(255, 255, 255, 0.2), transparent 60%),
-    linear-gradient(135deg, #11426d 0%, #2f78b5 100%);
+    linear-gradient(135deg, #11426d 0%, #2f78b5 55%, #4393d0 100%);
   color: #fff;
-  padding: 28px 30px;
-  display: flex;
+  padding: 30px 34px;
+  display: grid;
+  grid-template-columns: 1.3fr 0.7fr;
+  gap: 20px;
   justify-content: space-between;
   align-items: center;
   box-shadow: var(--glow-brand);
 }
 
+.public-home-brand {
+  display: grid;
+  gap: 12px;
+}
+
 .public-home-banner h1 {
   margin: 0;
   font-family: 'Sora', 'Manrope', sans-serif;
-  font-size: clamp(2.2rem, 5.2vw, 3.8rem);
-  letter-spacing: 0.06em;
+  font-size: clamp(2.4rem, 5.4vw, 4.1rem);
+  letter-spacing: 0.08em;
   font-weight: 700;
+  color: #fff;
+}
+
+.public-home-banner p {
+  margin: 0;
+  color: #dfedfb;
+  max-width: 760px;
+}
+
+.public-home-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.public-home-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ecf5ff;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.public-home-metrics {
+  display: grid;
+  gap: 10px;
+}
+
+.public-home-metric {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.12);
+  padding: 11px 12px;
+}
+
+.public-home-metric p {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d9ebfb;
+}
+
+.public-home-metric strong {
+  font-family: 'Sora', 'Manrope', sans-serif;
+  font-size: 1.12rem;
+  color: #fff;
 }
 
 .auth-wrap {
@@ -967,6 +1027,11 @@ button:disabled {
   .public-home-banner {
     padding: 22px 16px;
     gap: 14px;
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .public-home-actions {
     flex-direction: column;
     align-items: flex-start;
   }
