@@ -857,8 +857,8 @@ button:disabled {
   color: #fff;
   padding: 30px 34px;
   display: grid;
-  grid-template-columns: 1.3fr 0.7fr;
-  gap: 20px;
+  grid-template-columns: 1fr;
+  gap: 14px;
   justify-content: space-between;
   align-items: center;
   box-shadow: var(--glow-brand);

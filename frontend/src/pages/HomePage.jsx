@@ -86,31 +86,11 @@ export default function HomePage() {
       <section className="public-home">
         <article className="public-home-banner">
           <div className="public-home-brand">
-            <p className="eyebrow">Plateforme logistique</p>
             <h1>LOGIX</h1>
-            <p>
-              Envoi, suivi et gestion des reclamations sur une seule interface, avec execution terrain en
-              temps reel.
-            </p>
             <div className="public-home-actions">
               <Link to="/auth" className="button-link">
                 Connexion
               </Link>
-              <span className="public-home-chip">Service pro B2C/B2B</span>
-            </div>
-          </div>
-          <div className="public-home-metrics">
-            <div className="public-home-metric">
-              <p>Suivi live</p>
-              <strong>24/7</strong>
-            </div>
-            <div className="public-home-metric">
-              <p>Claims SLA</p>
-              <strong>Automatise</strong>
-            </div>
-            <div className="public-home-metric">
-              <p>Reseau relais</p>
-              <strong>National</strong>
             </div>
           </div>
         </article>
