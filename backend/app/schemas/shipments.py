@@ -260,13 +260,13 @@ class ShipmentPriceEstimateOut(BaseModel):
 class ShipmentPublicTrackRequest(BaseModel):
     shipment_no: str = Field(min_length=3, max_length=80)
     phone_e164: str = Field(min_length=8, max_length=20)
+    access_code: str = Field(min_length=6, max_length=12)
 
 
 class ShipmentPublicTrackOut(BaseModel):
-    shipment_id: UUID
-    shipment_no: str
+    shipment_no_masked: str
     status: str | None = None
-    receiver_name: str | None = None
+    receiver_name_masked: str | None = None
     estimated_delivery_at: datetime
     sla_state: str
     recent_timeline: list[ShipmentTimelineItem] = Field(default_factory=list)

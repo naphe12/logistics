@@ -2,6 +2,8 @@ import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import hashlib
+from threading import Lock
 from statistics import median
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
@@ -17,11 +19,25 @@ from app.services.notification_service import queue_and_send_sms
 from app.realtime.events import emit_shipment_status_update
 from app.enums import UserTypeEnum
 from app.models.users import User
+from app.config import JWT_SECRET_KEY
+from app.config import (
+    PUBLIC_TRACK_BRUTEFORCE_BASE_DELAY_SECONDS,
+    PUBLIC_TRACK_BRUTEFORCE_ENABLED,
+    PUBLIC_TRACK_BRUTEFORCE_MAX_DELAY_SECONDS,
+    PUBLIC_TRACK_BRUTEFORCE_RESET_SECONDS,
+    PUBLIC_TRACK_BRUTEFORCE_THRESHOLD,
+)
 from app.services.insurance_service import compute_insurance_quote, get_insurance_policy
 
 
 class ShipmentNotFoundError(Exception):
     pass
+
+
+class PublicTrackingLockedError(Exception):
+    def __init__(self, message: str, *, retry_after_seconds: int = 0) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 ETA_BASE_HOURS_BY_STATUS: dict[str, int] = {
@@ -52,6 +68,8 @@ SMS_STATUS_MESSAGES: dict[str, str] = {
     "ready_for_pickup": "Votre colis {shipment_no} est pret pour retrait.",
     "delivered": "Votre colis {shipment_no} a ete livre avec succes.",
 }
+_public_track_lock = Lock()
+_public_track_attempts: dict[str, dict[str, object]] = {}
 
 PRICE_BASE_BIF = Decimal("2500")
 PRICE_FUEL_RATE = Decimal("0.12")
@@ -74,6 +92,141 @@ def _maybe_send_status_sms(db: Session, shipment: Shipment, status: str | None) 
         queue_and_send_sms(db, shipment.sender_phone, message)
     if shipment.receiver_phone and shipment.receiver_phone != shipment.sender_phone:
         queue_and_send_sms(db, shipment.receiver_phone, message)
+
+
+def _normalize_phone(phone: str | None) -> str:
+    if not phone:
+        return ""
+    return str(phone).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+
+def _tracking_access_code_for(shipment: Shipment, phone_e164: str) -> str:
+    normalized_phone = _normalize_phone(phone_e164)
+    raw = f"{JWT_SECRET_KEY}|{shipment.shipment_no}|{normalized_phone}|public-track-v1"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    numeric = int(digest[:12], 16) % 1_000_000
+    return f"{numeric:06d}"
+
+
+def _mask_text(value: str | None, keep_start: int = 2, keep_end: int = 1) -> str:
+    if not value:
+        return "-"
+    text = str(value)
+    if len(text) <= keep_start + keep_end:
+        return "*" * len(text)
+    return f"{text[:keep_start]}{'*' * (len(text) - keep_start - keep_end)}{text[-keep_end:]}"
+
+
+def _public_track_key(shipment_no: str, phone_e164: str) -> str:
+    return f"{shipment_no.strip().lower()}|{_normalize_phone(phone_e164)}"
+
+
+def _cleanup_public_track_attempts(now: datetime) -> None:
+    cutoff = now - timedelta(seconds=PUBLIC_TRACK_BRUTEFORCE_RESET_SECONDS)
+    for key in list(_public_track_attempts.keys()):
+        row = _public_track_attempts.get(key) or {}
+        last_failed_at = row.get("last_failed_at")
+        if isinstance(last_failed_at, datetime) and last_failed_at < cutoff:
+            _public_track_attempts.pop(key, None)
+
+
+def _mask_phone(value: str | None) -> str:
+    return _mask_text(_normalize_phone(value), keep_start=3, keep_end=2)
+
+
+def _audit_public_track_lock_event(
+    db: Session,
+    *,
+    action: str,
+    shipment_no: str,
+    phone_e164: str,
+    retry_after_seconds: int | None = None,
+) -> None:
+    masked_shipment_no = _mask_text(shipment_no.strip().upper(), keep_start=3, keep_end=2)
+    endpoint = f"/shipments/public/track/{masked_shipment_no}"
+    if retry_after_seconds is not None:
+        endpoint = f"{endpoint}?retry_after={retry_after_seconds}s"
+    try:
+        log_action(
+            db,
+            entity="public_tracking",
+            action=action,
+            actor_phone=_mask_phone(phone_e164),
+            endpoint=endpoint,
+            method="POST",
+            status_code=429,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _check_public_track_lock_or_raise(db: Session, shipment_no: str, phone_e164: str) -> None:
+    if not PUBLIC_TRACK_BRUTEFORCE_ENABLED:
+        return
+    now = datetime.now(UTC)
+    key = _public_track_key(shipment_no, phone_e164)
+    with _public_track_lock:
+        _cleanup_public_track_attempts(now)
+        row = _public_track_attempts.get(key)
+        if not row:
+            return
+        locked_until = row.get("locked_until")
+        if isinstance(locked_until, datetime) and locked_until > now:
+            retry_after_seconds = max(1, int((locked_until - now).total_seconds()))
+            _audit_public_track_lock_event(
+                db,
+                action="bruteforce_lock_block",
+                shipment_no=shipment_no,
+                phone_e164=phone_e164,
+                retry_after_seconds=retry_after_seconds,
+            )
+            raise PublicTrackingLockedError(
+                "Public tracking temporarily locked. Try again later.",
+                retry_after_seconds=retry_after_seconds,
+            )
+
+
+def _register_public_track_failure(db: Session, shipment_no: str, phone_e164: str) -> None:
+    if not PUBLIC_TRACK_BRUTEFORCE_ENABLED:
+        return
+    now = datetime.now(UTC)
+    key = _public_track_key(shipment_no, phone_e164)
+    with _public_track_lock:
+        _cleanup_public_track_attempts(now)
+        row = _public_track_attempts.get(key) or {}
+        failed_count = int(row.get("failed_count", 0)) + 1
+        row["failed_count"] = failed_count
+        row["last_failed_at"] = now
+        prev_locked_until = row.get("locked_until")
+        lock_delay_seconds = None
+        if failed_count >= PUBLIC_TRACK_BRUTEFORCE_THRESHOLD:
+            power = failed_count - PUBLIC_TRACK_BRUTEFORCE_THRESHOLD
+            delay_seconds = min(
+                PUBLIC_TRACK_BRUTEFORCE_MAX_DELAY_SECONDS,
+                PUBLIC_TRACK_BRUTEFORCE_BASE_DELAY_SECONDS * (2**max(0, power)),
+            )
+            lock_delay_seconds = delay_seconds
+            row["locked_until"] = now + timedelta(seconds=delay_seconds)
+        _public_track_attempts[key] = row
+    if lock_delay_seconds is not None:
+        prev_is_active = isinstance(prev_locked_until, datetime) and prev_locked_until > now
+        if not prev_is_active:
+            _audit_public_track_lock_event(
+                db,
+                action="bruteforce_lock_set",
+                shipment_no=shipment_no,
+                phone_e164=phone_e164,
+                retry_after_seconds=lock_delay_seconds,
+            )
+
+
+def _clear_public_track_failures(shipment_no: str, phone_e164: str) -> None:
+    if not PUBLIC_TRACK_BRUTEFORCE_ENABLED:
+        return
+    key = _public_track_key(shipment_no, phone_e164)
+    with _public_track_lock:
+        _public_track_attempts.pop(key, None)
 
 
 def _apply_visibility_scope(query, current_user: User):
@@ -143,16 +296,22 @@ def create_shipment(
             f"couverture max {insurance_quote.coverage_amount} BIF."
         )
 
+    sender_track_code = _tracking_access_code_for(shipment, payload.sender_phone)
+    receiver_track_code = _tracking_access_code_for(shipment, payload.receiver_phone)
+
     queue_and_send_sms(
         db,
         payload.sender_phone,
-        f"Colis {shipment.shipment_no} cree avec succes.{insurance_hint}",
+        f"Colis {shipment.shipment_no} cree avec succes.{insurance_hint} Code suivi public: {sender_track_code}.",
         background_tasks=background_tasks,
     )
     queue_and_send_sms(
         db,
         payload.receiver_phone,
-        f"Votre colis {shipment.shipment_no} est enregistre. Code retrait: {raw_pickup_code}.",
+        (
+            f"Votre colis {shipment.shipment_no} est enregistre. "
+            f"Code retrait: {raw_pickup_code}. Code suivi public: {receiver_track_code}."
+        ),
         background_tasks=background_tasks,
     )
 
@@ -340,18 +499,31 @@ def get_public_tracking_by_shipment_no(
     *,
     shipment_no: str,
     phone_e164: str,
+    access_code: str,
 ) -> dict[str, object]:
+    _check_public_track_lock_or_raise(db, shipment_no, phone_e164)
+
     shipment = (
         db.query(Shipment)
         .filter(func.lower(Shipment.shipment_no) == shipment_no.strip().lower())
         .first()
     )
     if not shipment:
+        _register_public_track_failure(db, shipment_no, phone_e164)
         raise ShipmentNotFoundError("Shipment not found")
 
-    phone = phone_e164.strip()
-    if phone not in {shipment.sender_phone, shipment.receiver_phone}:
+    phone = _normalize_phone(phone_e164)
+    sender_phone = _normalize_phone(shipment.sender_phone)
+    receiver_phone = _normalize_phone(shipment.receiver_phone)
+    if phone not in {sender_phone, receiver_phone}:
+        _register_public_track_failure(db, shipment_no, phone_e164)
         raise ShipmentNotFoundError("Shipment not found")
+
+    expected_code = _tracking_access_code_for(shipment, phone)
+    if str(access_code).strip() != expected_code:
+        _register_public_track_failure(db, shipment_no, phone_e164)
+        raise ShipmentNotFoundError("Shipment not found")
+    _clear_public_track_failures(shipment_no, phone_e164)
 
     now = datetime.now(UTC)
     pseudo_user = User(
@@ -379,18 +551,17 @@ def get_public_tracking_by_shipment_no(
             "code": event.event_type or "shipment_event",
             "status": shipment.status,
             "message": None,
-            "relay_id": event.relay_id,
+            "relay_id": None,
             "incident_id": None,
-            "extra": event.extra,
+            "extra": None,
         }
         for event in events
     ]
 
     return {
-        "shipment_id": shipment.id,
-        "shipment_no": shipment.shipment_no,
+        "shipment_no_masked": _mask_text(shipment.shipment_no, keep_start=3, keep_end=2),
         "status": shipment.status,
-        "receiver_name": shipment.receiver_name,
+        "receiver_name_masked": _mask_text(shipment.receiver_name, keep_start=1, keep_end=0),
         "estimated_delivery_at": eta["estimated_delivery_at"],
         "sla_state": sla_state,
         "recent_timeline": recent_timeline,

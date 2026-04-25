@@ -14,6 +14,7 @@ from app.config import (
     RATE_LIMIT_MAX_REQUESTS,
     RATE_LIMIT_SENSITIVE_MAX_REQUESTS,
     RATE_LIMIT_USSD_MAX_REQUESTS,
+    RATE_LIMIT_PUBLIC_TRACK_MAX_REQUESTS,
     RATE_LIMIT_WINDOW_SECONDS,
 )
 from app.database import SessionLocal
@@ -80,6 +81,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.sensitive_limit = RATE_LIMIT_SENSITIVE_MAX_REQUESTS
         self.auth_limit = RATE_LIMIT_AUTH_MAX_REQUESTS
         self.ussd_limit = RATE_LIMIT_USSD_MAX_REQUESTS
+        self.public_track_limit = RATE_LIMIT_PUBLIC_TRACK_MAX_REQUESTS
         self._buckets: dict[str, deque] = defaultdict(deque)
         self._lock = Lock()
 
@@ -90,6 +92,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return "sensitive", self.sensitive_limit
         if path.startswith("/ussd"):
             return "ussd", self.ussd_limit
+        if path.startswith("/shipments/public/track"):
+            return "public_track", self.public_track_limit
         return "global", self.default_limit
 
     def _cleanup(self, timestamps: deque, now: float) -> None:

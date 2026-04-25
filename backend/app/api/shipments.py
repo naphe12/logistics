@@ -63,6 +63,7 @@ from app.services.shipment_service import (
     update_pickup_slot,
     get_relay_pickup_forecast,
     capture_delivery_proof,
+    PublicTrackingLockedError,
     update_shipment_extra,
     update_shipment_status,
     ShipmentNotFoundError,
@@ -204,7 +205,18 @@ def shipment_public_track_endpoint(
             db,
             shipment_no=payload.shipment_no,
             phone_e164=payload.phone_e164,
+            access_code=payload.access_code,
         )
+    except PublicTrackingLockedError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": str(exc),
+                "error_code": "public_track_locked",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

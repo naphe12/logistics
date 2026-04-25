@@ -7,7 +7,7 @@ export default function PublicTrackingPage() {
   const [trackResult, setTrackResult] = useState(null)
   const [estimateResult, setEstimateResult] = useState(null)
   const [relays, setRelays] = useState([])
-  const [trackForm, setTrackForm] = useState({ shipment_no: '', phone: '' })
+  const [trackForm, setTrackForm] = useState({ shipment_no: '', phone: '', access_code: '' })
   const [estimateForm, setEstimateForm] = useState({
     origin_relay_id: '',
     destination_relay_id: '',
@@ -28,6 +28,7 @@ export default function PublicTrackingPage() {
       const res = await publicTrackShipment({
         shipmentNo: trackForm.shipment_no.trim(),
         phone: trackForm.phone.trim(),
+        accessCode: trackForm.access_code.trim(),
       })
       setTrackResult(res)
     } catch (err) {
@@ -83,6 +84,15 @@ export default function PublicTrackingPage() {
                 required
               />
             </label>
+            <label>
+              Code d'acces suivi
+              <input
+                value={trackForm.access_code}
+                onChange={(e) => setTrackForm((s) => ({ ...s, access_code: e.target.value }))}
+                placeholder="6 chiffres"
+                required
+              />
+            </label>
             <button type="submit">Rechercher</button>
           </form>
 
@@ -90,11 +100,15 @@ export default function PublicTrackingPage() {
             <div className="stack-compact" style={{ marginTop: 10 }}>
               <div className="data-row">
                 <span>Colis</span>
-                <strong>{trackResult.shipment_no}</strong>
+                <strong>{trackResult.shipment_no_masked}</strong>
               </div>
               <div className="data-row">
                 <span>Statut</span>
                 <span className="badge info">{trackResult.status || '-'}</span>
+              </div>
+              <div className="data-row">
+                <span>Destinataire</span>
+                <strong>{trackResult.receiver_name_masked || '-'}</strong>
               </div>
               <div className="data-row">
                 <span>SLA</span>

@@ -112,10 +112,10 @@ export async function checkHealth() {
   return request('/health')
 }
 
-export async function publicTrackShipment({ shipmentNo, phone }) {
+export async function publicTrackShipment({ shipmentNo, phone, accessCode }) {
   return request('/shipments/public/track', {
     method: 'POST',
-    body: { shipment_no: shipmentNo, phone_e164: phone },
+    body: { shipment_no: shipmentNo, phone_e164: phone, access_code: accessCode },
   })
 }
 
