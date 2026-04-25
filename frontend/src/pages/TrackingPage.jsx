@@ -7,6 +7,7 @@ import {
   getRelayPickupForecast,
   getShipmentTimeline,
   getShipmentTrackingSummary,
+  listPublicRelays,
   listShipments,
   openShipmentTrackingSocket,
   updateShipmentPickupSlot,
@@ -14,6 +15,7 @@ import {
   validatePickupCode,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { humanizeCode, humanizeStatus } from '../utils/display'
 
 const statusOptions = [
   'created',
@@ -38,6 +40,21 @@ function formatDateTime(value) {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return String(value)
   return dt.toLocaleString()
+}
+
+function prettifyCode(value) {
+  if (!value) return '-'
+  return String(value)
+    .replace(/^shipment_/, '')
+    .replace(/_/g, ' ')
+    .trim()
+}
+
+function resolveStatusCode(item) {
+  if (item?.status) return item.status
+  const code = String(item?.code || '')
+  if (code.startsWith('shipment_')) return code.replace(/^shipment_/, '')
+  return ''
 }
 
 export default function TrackingPage() {
@@ -92,8 +109,23 @@ export default function TrackingPage() {
   const [forecastRelayId, setForecastRelayId] = useState('')
   const [forecastHours, setForecastHours] = useState(24)
   const [pickupForecast, setPickupForecast] = useState([])
+  const [relayNameById, setRelayNameById] = useState({})
 
   const liveHeadline = useMemo(() => liveShipmentId || '-', [liveShipmentId])
+
+  useEffect(() => {
+    listPublicRelays()
+      .then((rows) => {
+        const map = {}
+        for (const row of Array.isArray(rows) ? rows : []) {
+          if (row?.id && row?.name) map[row.id] = row.name
+        }
+        setRelayNameById(map)
+      })
+      .catch(() => {
+        setRelayNameById({})
+      })
+  }, [])
 
   useEffect(() => {
     if (!token || !liveShipmentId) {
@@ -361,7 +393,7 @@ export default function TrackingPage() {
               </div>
               <div className="data-row">
                 <span>Statut</span>
-                <span className="badge info">{trackedShipment.status || '-'}</span>
+                <span className="badge info">{humanizeStatus(trackedShipment.status)}</span>
               </div>
             </div>
           ) : (
@@ -373,7 +405,7 @@ export default function TrackingPage() {
               {lookupMatches.map((row) => (
                 <div key={row.id} className="relay-item">
                   <p>
-                    <strong>{row.shipment_no}</strong> | {row.status || '-'}
+                    <strong>{row.shipment_no}</strong> | {humanizeStatus(row.status)}
                   </p>
                   <button type="button" className="button-secondary" onClick={() => onSelectMatch(row)}>
                     Ouvrir ce colis
@@ -425,12 +457,21 @@ export default function TrackingPage() {
           {trackingTimeline.length === 0 ? <p>Aucun evenement pour ce colis.</p> : null}
           {trackingTimeline.map((item, index) => (
             <div key={`${item.occurred_at || 'no-ts'}-${item.code || index}`} className="relay-item">
-              <p>
-                <strong>{item.message || item.code || item.kind || 'event'}</strong>
-              </p>
-              <p>{formatDateTime(item.occurred_at)}</p>
-              <p>status: {item.status || '-'}</p>
-              <p className="mono">relay: {item.relay_id || '-'}</p>
+              {(() => {
+                const statusCode = resolveStatusCode(item)
+                const statusLabel = statusCode ? prettifyCode(statusCode) : '-'
+                const relayName = item.relay_id ? relayNameById[item.relay_id] || item.relay_id : '-'
+                return (
+                  <>
+                    <p>
+                      <strong>{item.message || prettifyCode(item.code || item.kind) || 'event'}</strong>
+                    </p>
+                    <p>{formatDateTime(item.occurred_at)}</p>
+                    <p>status: {statusLabel}</p>
+                    <p>relay: {relayName}</p>
+                  </>
+                )
+              })()}
             </div>
           ))}
         </div>
@@ -742,9 +783,9 @@ export default function TrackingPage() {
               <div key={`${event.timestamp || 'no-ts'}-${index}`} className="relay-item">
                 <p className="mono">[{event.timestamp || '-'}]</p>
                 <p>
-                  <strong>{event.event_type || event.kind || 'event'}</strong>
+                  <strong>{humanizeCode(event.event_type || event.kind || 'event')}</strong>
                 </p>
-                <p>status: {event.status || '-'}</p>
+                <p>status: {humanizeStatus(event.status)}</p>
               </div>
             ))}
           </div>
@@ -775,7 +816,7 @@ export default function TrackingPage() {
               <div className="data-row">
                 <span>Status / confidence</span>
                 <strong>
-                  {eta.status} / {eta.confidence}
+                  {humanizeStatus(eta.status)} / {eta.confidence}
                 </strong>
               </div>
               <div className="data-row">

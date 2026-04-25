@@ -11,6 +11,7 @@ import {
   updateMyShippingPreferences,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { formatDateTime, humanizeStatus } from '../utils/display'
 
 const initialForm = {
   sender_phone: '',
@@ -639,7 +640,7 @@ export default function ShipmentsPage() {
                 </div>
                 <div className="data-row">
                   <span>Statut</span>
-                  <span className="badge success">{createdShipment.status || 'created'}</span>
+                  <span className="badge success">{humanizeStatus(createdShipment.status || 'created')}</span>
                 </div>
                 <div className="data-row">
                   <span>Couverture</span>
@@ -688,7 +689,7 @@ export default function ShipmentsPage() {
                   </p>
                   <div className="data-row">
                     <span>Statut metier</span>
-                    <span className="badge info">{shipment.status || '-'}</span>
+                    <span className="badge info">{humanizeStatus(shipment.status)}</span>
                   </div>
                   <div className="data-row">
                     <span>SLA</span>
@@ -696,7 +697,7 @@ export default function ShipmentsPage() {
                   </div>
                   <div className="data-row">
                     <span>ETA</span>
-                    <strong>{shipment?.estimated_delivery_at || '-'}</strong>
+                    <strong>{formatDateTime(shipment?.estimated_delivery_at)}</strong>
                   </div>
                   <div className="data-row">
                     <span>Heures restantes SLA</span>

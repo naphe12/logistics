@@ -14,6 +14,7 @@ import {
   updateIncidentStatus,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { formatDateTime, humanizeCode, humanizeStatus } from '../utils/display'
 
 const incidentTypes = ['lost', 'damaged', 'delayed', 'claim']
 const claimStatuses = ['submitted', 'reviewing', 'approved', 'rejected', 'paid']
@@ -408,7 +409,7 @@ export default function IncidentsPage() {
             {incidents.map((incident) => (
               <div key={incident.id} className="relay-item">
                 <p>
-                  <strong>{incident.incident_type}</strong> | statut: {incident.status}
+                  <strong>{humanizeCode(incident.incident_type)}</strong> | statut: {humanizeStatus(incident.status)}
                 </p>
                 <p>shipment: {incident.shipment_id}</p>
                 <p>{incident.description}</p>
@@ -434,10 +435,10 @@ export default function IncidentsPage() {
               >
                 <option value="">Choisir</option>
                 {statuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
+                <option key={status} value={status}>
+                    {humanizeStatus(status)}
+                </option>
+              ))}
               </select>
             </label>
             <button type="submit" disabled={!selectedIncidentId || !updateForm.status}>
@@ -463,7 +464,7 @@ export default function IncidentsPage() {
             {incidentUpdates.map((update) => (
               <div key={update.id} className="relay-item">
                 <p>{update.message}</p>
-                <p>{update.created_at}</p>
+                <p>{formatDateTime(update.created_at)}</p>
               </div>
             ))}
           </div>
@@ -491,7 +492,7 @@ export default function IncidentsPage() {
             {claims.map((claim) => (
               <div key={claim.id} className="relay-item">
                 <p>
-                  <strong>{claim.status}</strong> | {claim.claim_type || '-'} | req:{' '}
+                  <strong>{humanizeStatus(claim.status)}</strong> | {humanizeCode(claim.claim_type)} | req:{' '}
                   {claim.amount_requested ?? claim.amount}
                 </p>
                 <p>approved: {claim.amount_approved ?? '-'} | risk: {claim.risk_score ?? '-'}</p>
@@ -499,7 +500,7 @@ export default function IncidentsPage() {
                   <p>flags: {claim.risk_flags.join(', ')}</p>
                 ) : null}
                 <p>{claim.reason}</p>
-                <p>{claim.created_at}</p>
+                <p>{formatDateTime(claim.created_at)}</p>
               </div>
             ))}
           </div>
@@ -564,7 +565,7 @@ export default function IncidentsPage() {
             {topRiskClaims.map((claim) => (
               <div key={claim.id} className="relay-item">
                 <p>
-                  <strong>risk {claim.risk_score}</strong> | status {claim.status}
+                  <strong>risk {claim.risk_score}</strong> | status {humanizeStatus(claim.status)}
                 </p>
                 <p>{claim.id}</p>
                 <p>{Array.isArray(claim.risk_flags) ? claim.risk_flags.join(', ') : '-'}</p>

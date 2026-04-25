@@ -11,6 +11,7 @@ import {
   refundPayment,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { humanizeCode, humanizeStatus } from '../utils/display'
 
 const createDefaults = {
   shipment_id: '',
@@ -200,10 +201,11 @@ export default function PaymentsPage() {
               </p>
               <p>
                 shipment: {payment.shipment_id} | montant: {payment.amount} | stage:{' '}
-                {payment.payment_stage || '-'} | provider: {payment.provider || '-'}
+                {humanizeCode(payment.payment_stage)} | provider: {payment.provider || '-'}
               </p>
               <p>
-                statut: <strong>{payment.status || '-'}</strong> | ref: {payment.external_ref || '-'} | payer:{' '}
+                statut: <strong>{humanizeStatus(payment.status)}</strong> | ref: {payment.external_ref || '-'} |
+                payer:{' '}
                 {payment.payer_phone || '-'}
               </p>
               {payment.failure_reason ? <p>raison echec: {payment.failure_reason}</p> : null}
@@ -257,7 +259,7 @@ export default function PaymentsPage() {
                 payment: {row.payment_id || '-'} | shipment: {row.shipment_id || '-'} | beneficiary:{' '}
                 {row.beneficiary_kind || '-'}:{row.beneficiary_id || '-'}
               </p>
-              <p>status: {row.status || '-'}</p>
+              <p>status: {humanizeStatus(row.status)}</p>
             </div>
           ))}
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listPublicRelays, publicEstimateShipment, publicTrackShipment } from '../api/client'
+import { formatDateTime, humanizeCode, humanizeStatus, relayDisplayName } from '../utils/display'
 
 export default function PublicTrackingPage() {
   const [error, setError] = useState('')
@@ -14,6 +15,7 @@ export default function PublicTrackingPage() {
     declared_value: '',
     insurance_opt_in: false,
   })
+  const relayNameById = Object.fromEntries((relays || []).filter((r) => r?.id).map((r) => [r.id, r.name || r.id]))
 
   useEffect(() => {
     listPublicRelays()
@@ -104,7 +106,7 @@ export default function PublicTrackingPage() {
               </div>
               <div className="data-row">
                 <span>Statut</span>
-                <span className="badge info">{trackResult.status || '-'}</span>
+                <span className="badge info">{humanizeStatus(trackResult.status)}</span>
               </div>
               <div className="data-row">
                 <span>Destinataire</span>
@@ -124,9 +126,11 @@ export default function PublicTrackingPage() {
                 {(trackResult.recent_timeline || []).map((item, idx) => (
                   <div key={`${item.occurred_at || 'x'}-${idx}`} className="relay-item">
                     <p>
-                      <strong>{item.code}</strong>
+                      <strong>{humanizeCode(item.code)}</strong>
                     </p>
-                    <p>{item.occurred_at}</p>
+                    <p>{formatDateTime(item.occurred_at)}</p>
+                    <p>status: {humanizeStatus(item.status)}</p>
+                    <p>relay: {relayDisplayName(item.relay_id, relayNameById)}</p>
                   </div>
                 ))}
               </div>

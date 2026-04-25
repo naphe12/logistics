@@ -7,6 +7,7 @@ import {
   getTransportGroupingSuggestions,
   getTransportPrioritySuggestions,
   getTripManifest,
+  listPublicRelays,
   listTrips,
   removeShipmentFromManifest,
   scanTripArrival,
@@ -14,6 +15,7 @@ import {
   updateTrip,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { humanizeStatus, relayDisplayName } from '../utils/display'
 
 const defaultTripForm = {
   route_id: '',
@@ -43,6 +45,7 @@ export default function TransportPage() {
   const [priorityQueue, setPriorityQueue] = useState(null)
   const [autoAssignForm, setAutoAssignForm] = useState(defaultAutoAssignForm)
   const [autoAssignResult, setAutoAssignResult] = useState(null)
+  const [relayNameById, setRelayNameById] = useState({})
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => trip.id === selectedTripId) || null,
@@ -78,6 +81,15 @@ export default function TransportPage() {
     loadTrips().catch((err) => setError(err.message))
     loadGrouping().catch((err) => setError(err.message))
     loadPriorityQueue().catch((err) => setError(err.message))
+    listPublicRelays()
+      .then((rows) => {
+        const map = {}
+        for (const row of Array.isArray(rows) ? rows : []) {
+          if (row?.id) map[row.id] = row.name || row.id
+        }
+        setRelayNameById(map)
+      })
+      .catch(() => setRelayNameById({}))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
@@ -265,7 +277,7 @@ export default function TransportPage() {
                 onChange={(e) => setTripForm((s) => ({ ...s, status: e.target.value }))}
               >
                 <option value="planned">planned</option>
-                <option value="in_progress">in_progress</option>
+                <option value="in_progress">in progress</option>
                 <option value="arrived">arrived</option>
                 <option value="completed">completed</option>
                 <option value="cancelled">cancelled</option>
@@ -292,7 +304,7 @@ export default function TransportPage() {
                   <strong>{trip.id}</strong>
                 </p>
                 <p>
-                  status: {trip.status || '-'} | route: {trip.route_id || '-'} | vehicle:{' '}
+                  status: {humanizeStatus(trip.status)} | route: {trip.route_id || '-'} | vehicle:{' '}
                   {trip.vehicle_id || '-'}
                 </p>
                 <div className="ops-actions">
@@ -337,7 +349,7 @@ export default function TransportPage() {
                   <strong>{shipment.shipment_no}</strong> ({shipment.id})
                 </p>
                 <p>
-                  statut: {shipment.status || '-'} | destinataire: {shipment.receiver_name || '-'}
+                  statut: {humanizeStatus(shipment.status)} | destinataire: {shipment.receiver_name || '-'}
                 </p>
                 <button type="button" onClick={() => onRemoveShipment(shipment.id)}>
                   Retirer
@@ -386,7 +398,8 @@ export default function TransportPage() {
                 <strong>{suggestion.key}</strong> | count: {suggestion.candidate_count}
               </p>
               <p>
-                origin: {suggestion.origin || '-'} | destination: {suggestion.destination || '-'}
+                origin: {relayDisplayName(suggestion.origin, relayNameById)} | destination:{' '}
+                {relayDisplayName(suggestion.destination, relayNameById)}
               </p>
               <p>
                 colis: {(suggestion.shipments || []).map((x) => x.shipment_no || x.shipment_id).join(', ')}
@@ -414,8 +427,8 @@ export default function TransportPage() {
                 <strong>{item.shipment_no || item.shipment_id}</strong> | score: {item.priority_score}
               </p>
               <p>
-                status: {item.status || '-'} | origin: {item.origin || '-'} | destination:{' '}
-                {item.destination || '-'}
+                status: {humanizeStatus(item.status)} | origin: {relayDisplayName(item.origin, relayNameById)} |
+                destination: {relayDisplayName(item.destination, relayNameById)}
               </p>
               <p>reasons: {(item.reasons || []).join(' | ') || '-'}</p>
               <button

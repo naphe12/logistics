@@ -13,6 +13,7 @@ import {
   updateRelay,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { humanizeStatus } from '../utils/display'
 
 const emptyRelayForm = {
   relay_code: '',
@@ -382,7 +383,7 @@ export default function RelaysPage() {
                   <strong>{row.shipment_no || row.shipment_id}</strong>
                 </p>
                 <p>
-                  status colis: {row.shipment_status || '-'} | present: {row.present ? 'oui' : 'non'}
+                  status colis: {humanizeStatus(row.shipment_status)} | present: {row.present ? 'oui' : 'non'}
                 </p>
               </div>
             ))}
