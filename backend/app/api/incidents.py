@@ -9,7 +9,9 @@ from app.enums import UserTypeEnum
 from app.models.users import User
 from app.schemas.incidents import (
     ClaimCreate,
+    ClaimAutoEscalateResult,
     ClaimOpsStatsOut,
+    InsuranceFinanceReportOut,
     ClaimListPageOut,
     ClaimOut,
     ClaimUpdateStatusRequest,
@@ -31,9 +33,11 @@ from app.services.incident_service import (
     auto_escalate_stale_incidents,
     create_claim,
     create_incident,
+    auto_escalate_stale_claims,
     get_incident,
     get_incident_dashboard,
     get_claims_ops_stats,
+    get_insurance_finance_report,
     get_incident_timeline,
     list_claims,
     list_claims_page,
@@ -153,6 +157,33 @@ def claims_ops_stats_endpoint(
     _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.agent, UserTypeEnum.hub)),
 ):
     return get_claims_ops_stats(db, stale_hours=stale_hours)
+
+
+@router.post("/claims/ops/auto-escalate", response_model=ClaimAutoEscalateResult)
+def claims_auto_escalate_endpoint(
+    stale_hours: int = Query(default=24, ge=1, le=720),
+    limit: int = Query(default=200, ge=1, le=500),
+    dry_run: bool = Query(default=False),
+    notify_internal: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub)),
+):
+    return auto_escalate_stale_claims(
+        db,
+        stale_hours=stale_hours,
+        limit=limit,
+        dry_run=dry_run,
+        notify_internal=notify_internal,
+    )
+
+
+@router.get("/claims/stats/finance", response_model=InsuranceFinanceReportOut)
+def claims_finance_report_endpoint(
+    months: int = Query(default=6, ge=1, le=36),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub)),
+):
+    return get_insurance_finance_report(db, months=months)
 
 
 @router.get("/dashboard", response_model=IncidentDashboardOut)

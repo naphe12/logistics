@@ -1,20 +1,46 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-const items = [
-  { to: '/dashboard', label: 'Accueil' },
-  { to: '/shipments', label: 'Creer colis' },
-  { to: '/relays', label: 'Relais' },
-  { to: '/transport', label: 'Transport' },
-  { to: '/payments', label: 'Paiements' },
-  { to: '/incidents', label: 'Incidents' },
-  { to: '/backoffice', label: 'Backoffice' },
-  { to: '/tracking', label: 'Operations' },
-  { to: '/ussd-simulator', label: 'USSD' },
-]
+const navByRole = {
+  client: [
+    { to: '/dashboard', label: 'Accueil client' },
+    { to: '/shipments', label: 'Envoyer colis' },
+    { to: '/tracking', label: 'Suivi colis' },
+    { to: '/incidents', label: 'Reclamations' },
+    { to: '/payments', label: 'Paiements' },
+  ],
+  agent: [
+    { to: '/dashboard', label: 'Espace agent' },
+    { to: '/tracking', label: 'Operations terrain' },
+    { to: '/transport', label: 'Trips & scans' },
+    { to: '/shipments', label: 'Creation colis' },
+    { to: '/relays', label: 'Relais' },
+    { to: '/incidents', label: 'Incidents' },
+  ],
+  admin: [
+    { to: '/dashboard', label: 'Pilotage global' },
+    { to: '/backoffice', label: 'Backoffice' },
+    { to: '/shipments', label: 'Colis' },
+    { to: '/tracking', label: 'Tracking live' },
+    { to: '/transport', label: 'Transport' },
+    { to: '/relays', label: 'Reseau relais' },
+    { to: '/payments', label: 'Paiements' },
+    { to: '/incidents', label: 'Incidents & claims' },
+    { to: '/ussd-simulator', label: 'USSD' },
+  ],
+}
+
+const roleLabels = {
+  client: 'Client',
+  agent: 'Agent',
+  admin: 'Admin',
+}
 
 export default function Sidebar() {
-  const { logout } = useAuth()
+  const { logout, dashboardRole, userProfile } = useAuth()
+  const items = navByRole[dashboardRole] || navByRole.client
+  const displayName = [userProfile?.first_name, userProfile?.last_name].filter(Boolean).join(' ').trim()
+  const phone = userProfile?.phone_e164 || ''
 
   return (
     <aside className="sidebar">
@@ -23,8 +49,14 @@ export default function Sidebar() {
           <span className="brand-mark">L</span>
           <div>
             <p className="brand-title">Logix</p>
-            <p className="brand-subtitle">Operations Console</p>
+            <p className="brand-subtitle">Operations {roleLabels[dashboardRole] || 'Client'}</p>
           </div>
+        </div>
+
+        <div className="sidebar-role">
+          <span className={`role-pill role-${dashboardRole}`}>{roleLabels[dashboardRole] || 'Client'}</span>
+          {displayName ? <p className="sidebar-user">{displayName}</p> : null}
+          {phone ? <p className="sidebar-phone">{phone}</p> : null}
         </div>
 
         <nav className="sidebar-nav">

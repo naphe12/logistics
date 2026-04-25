@@ -109,12 +109,19 @@ class SmsWorkerStatusOut(BaseModel):
     ops_alert_autonotify_enabled: bool
     ops_alert_interval_seconds: int
     ops_alert_max_per_hour: int
+    claims_auto_escalate_enabled: bool
+    claims_auto_escalate_interval_seconds: int
+    claims_auto_escalate_limit: int
+    claims_auto_escalate_stale_hours: int
     last_run_at: str | None = None
     last_result: dict[str, int] | None = None
     last_error: str | None = None
     last_ops_alert_run_at: str | None = None
     last_ops_alert_result: dict[str, Any] | None = None
     last_ops_alert_error: str | None = None
+    last_claims_escalation_run_at: str | None = None
+    last_claims_escalation_result: dict[str, Any] | None = None
+    last_claims_escalation_error: str | None = None
 
 
 class BackofficeAlertOut(BaseModel):

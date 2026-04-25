@@ -5,9 +5,13 @@ import time
 from sqlalchemy import text
 
 from app.config import (
+    CLAIMS_AUTO_ESCALATE_ENABLED,
+    CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
+    CLAIMS_AUTO_ESCALATE_LIMIT,
     OPS_ALERT_AUTONOTIFY_ENABLED,
     OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS,
     OPS_ALERT_SMS_MAX_PER_HOUR,
+    INSURANCE_CLAIM_REVIEW_SLA_HOURS,
     SMS_QUEUE_AUTODISPATCH_BATCH,
     SMS_QUEUE_AUTODISPATCH_ENABLED,
     SMS_QUEUE_AUTODISPATCH_INTERVAL_SECONDS,
@@ -16,6 +20,7 @@ from app.config import (
 )
 from app.database import SessionLocal
 from app.services.backoffice_service import notify_critical_alerts_sms
+from app.services.incident_service import auto_escalate_stale_claims
 from app.services.notification_service import process_pending_sms
 
 
@@ -34,12 +39,19 @@ _status: dict[str, object] = {
     "ops_alert_autonotify_enabled": OPS_ALERT_AUTONOTIFY_ENABLED,
     "ops_alert_interval_seconds": OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS,
     "ops_alert_max_per_hour": OPS_ALERT_SMS_MAX_PER_HOUR,
+    "claims_auto_escalate_enabled": CLAIMS_AUTO_ESCALATE_ENABLED,
+    "claims_auto_escalate_interval_seconds": CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
+    "claims_auto_escalate_limit": CLAIMS_AUTO_ESCALATE_LIMIT,
+    "claims_auto_escalate_stale_hours": INSURANCE_CLAIM_REVIEW_SLA_HOURS,
     "last_run_at": None,
     "last_result": None,
     "last_error": None,
     "last_ops_alert_run_at": None,
     "last_ops_alert_result": None,
     "last_ops_alert_error": None,
+    "last_claims_escalation_run_at": None,
+    "last_claims_escalation_result": None,
+    "last_claims_escalation_error": None,
 }
 
 
@@ -117,6 +129,7 @@ def _run_loop() -> None:
         )
 
     next_ops_alert_check_at = datetime.now(UTC)
+    next_claims_escalation_check_at = datetime.now(UTC)
     while not _worker_stop_event.is_set():
         if not leader_acquired:
             # No leadership: wait and retry lock acquisition.
@@ -176,6 +189,31 @@ def _run_loop() -> None:
             interval = max(30, OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS)
             next_ops_alert_check_at = datetime.now(UTC) + timedelta(seconds=interval)
 
+        if CLAIMS_AUTO_ESCALATE_ENABLED and datetime.now(UTC) >= next_claims_escalation_check_at:
+            claims_db = SessionLocal()
+            try:
+                claims_result = auto_escalate_stale_claims(
+                    claims_db,
+                    stale_hours=INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+                    limit=CLAIMS_AUTO_ESCALATE_LIMIT,
+                    dry_run=False,
+                    notify_internal=True,
+                )
+                _set_status(
+                    last_claims_escalation_run_at=_utc_iso_now(),
+                    last_claims_escalation_result=claims_result,
+                    last_claims_escalation_error=None,
+                )
+            except Exception as exc:
+                _set_status(
+                    last_claims_escalation_run_at=_utc_iso_now(),
+                    last_claims_escalation_error=str(exc)[:2000],
+                )
+            finally:
+                claims_db.close()
+            claims_interval = max(60, CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS)
+            next_claims_escalation_check_at = datetime.now(UTC) + timedelta(seconds=claims_interval)
+
         _wait_interval_or_stop()
 
     _release_leader_lock(lock_db, leader_mode, leader_acquired)
@@ -201,6 +239,10 @@ def start_sms_queue_worker() -> None:
         ops_alert_autonotify_enabled=OPS_ALERT_AUTONOTIFY_ENABLED,
         ops_alert_interval_seconds=OPS_ALERT_AUTONOTIFY_INTERVAL_SECONDS,
         ops_alert_max_per_hour=OPS_ALERT_SMS_MAX_PER_HOUR,
+        claims_auto_escalate_enabled=CLAIMS_AUTO_ESCALATE_ENABLED,
+        claims_auto_escalate_interval_seconds=CLAIMS_AUTO_ESCALATE_INTERVAL_SECONDS,
+        claims_auto_escalate_limit=CLAIMS_AUTO_ESCALATE_LIMIT,
+        claims_auto_escalate_stale_hours=INSURANCE_CLAIM_REVIEW_SLA_HOURS,
     )
     _worker_thread = threading.Thread(target=_run_loop, name="sms-queue-worker", daemon=True)
     _worker_thread.start()

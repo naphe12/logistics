@@ -72,6 +72,9 @@ class ClaimOut(BaseModel):
     status: str | None = None
     claim_type: str | None = None
     proof_urls: list[str] | None = None
+    risk_score: Decimal | None = None
+    risk_flags: list[str] | None = None
+    escalated_at: datetime | None = None
     reason: str | None = None
     resolution_note: str | None = None
     refunded_payment_id: UUID | None = None
@@ -138,3 +141,27 @@ class ClaimOpsStatsOut(BaseModel):
     approved_total: Decimal
     paid_total: Decimal
     avg_resolution_hours: float | None = None
+
+
+class ClaimAutoEscalateResult(BaseModel):
+    examined: int
+    escalated: int
+    notified_recipients: int
+    stale_hours: int
+    dry_run: bool
+
+
+class InsuranceFinancePointOut(BaseModel):
+    month: str
+    premiums_collected: Decimal
+    claims_requested: Decimal
+    claims_approved: Decimal
+    claims_paid: Decimal
+    margin: Decimal
+    loss_ratio_pct: float
+
+
+class InsuranceFinanceReportOut(BaseModel):
+    months: int
+    points: list[InsuranceFinancePointOut]
+    totals: InsuranceFinancePointOut

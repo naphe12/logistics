@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { checkHealth } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import logisticsHero from '../assets/logistics-hero.svg'
 import logisticsNetwork from '../assets/logistics-network.svg'
 
@@ -26,8 +27,46 @@ const workflow = [
 ]
 
 export default function HomePage() {
+  const { dashboardRole } = useAuth()
   const [health, setHealth] = useState('unknown')
   const [error, setError] = useState('')
+
+  const homeByRole = {
+    client: {
+      eyebrow: 'Client Experience',
+      title: 'Envoyer et suivre vos colis en confiance',
+      description:
+        'Creation rapide, assurance optionnelle, suivi temps reel et reclamations pilotees avec SLA.',
+      actions: [
+        { to: '/shipments', label: 'Creer un envoi' },
+        { to: '/tracking', label: 'Suivre un colis' },
+      ],
+      priorities: ['Creation envoi', 'Suivi live', 'Reclamations assurees'],
+    },
+    agent: {
+      eyebrow: 'Field Ops',
+      title: 'Operations terrain et remise securisee',
+      description:
+        'Mise a jour statuts, scans de remise, verification codes et coordination transport en temps reel.',
+      actions: [
+        { to: '/tracking', label: 'Operations live' },
+        { to: '/transport', label: 'Gestion transport' },
+      ],
+      priorities: ['Scan & statut', 'Livraison terrain', 'Coordination hubs'],
+    },
+    admin: {
+      eyebrow: 'Control Tower',
+      title: 'Pilotage reseau, SLA et performance',
+      description:
+        'Vue globale operations, alerting, performance claims, finance assurance et orchestration des equipes.',
+      actions: [
+        { to: '/backoffice', label: 'Ouvrir backoffice' },
+        { to: '/incidents', label: 'SLA incidents/claims' },
+      ],
+      priorities: ['SLA & escalades', 'Fraude claims', 'Marge assurance'],
+    },
+  }
+  const roleHome = homeByRole[dashboardRole] || homeByRole.client
 
   async function runHealthCheck() {
     setError('')
@@ -45,18 +84,15 @@ export default function HomePage() {
       <article className="hero-card">
         <div className="hero-grid">
           <div>
-            <p className="eyebrow hero-eyebrow">Logistics Command</p>
-            <h2>Pilotage operationnel des expeditions Burundi</h2>
-            <p>
-              Plateforme unifiee pour orchestrer creation, tracking et remise des colis avec un niveau
-              de service type DHL / Mondial Relay adapte au terrain local.
-            </p>
+            <p className="eyebrow hero-eyebrow">{roleHome.eyebrow}</p>
+            <h2>{roleHome.title}</h2>
+            <p>{roleHome.description}</p>
             <div className="hero-actions">
-              <Link to="/shipments" className="button-link">
-                Nouveau colis
+              <Link to={roleHome.actions[0].to} className="button-link">
+                {roleHome.actions[0].label}
               </Link>
-              <Link to="/auth" className="button-link button-ghost">
-                Connexion
+              <Link to={roleHome.actions[1].to} className="button-link button-ghost">
+                {roleHome.actions[1].label}
               </Link>
               <button type="button" className="button-secondary" onClick={runHealthCheck}>
                 Verifier API
@@ -87,8 +123,16 @@ export default function HomePage() {
 
       <section className="home-row">
         <article className="panel">
-          <p className="eyebrow">Workflow Metier</p>
-          <h3>Cycle complet d un colis</h3>
+          <p className="eyebrow">Priorites Role</p>
+          <h3>Plan de travail {dashboardRole || 'client'}</h3>
+          <div className="preset-row">
+            {roleHome.priorities.map((priority) => (
+              <span key={priority} className="role-focus-chip">
+                {priority}
+              </span>
+            ))}
+          </div>
+          <h3 style={{ marginTop: '12px' }}>Cycle complet d un colis</h3>
           <div className="steps-grid">
             {workflow.map((step, index) => (
               <article className="step-card" key={step.title}>

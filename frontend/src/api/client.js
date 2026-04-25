@@ -140,12 +140,27 @@ export async function refreshAccessToken(refreshToken) {
   })
 }
 
+export async function getCurrentUser(token) {
+  return request('/auth/me', { token })
+}
+
 export async function createShipment(token, payload) {
   return request('/shipments', {
     method: 'POST',
     body: payload,
     token,
   })
+}
+
+export async function getShipmentInsuranceQuote(token, { declaredValue, insuranceOptIn = true }) {
+  const qs = new URLSearchParams()
+  qs.set('declared_value', String(declaredValue ?? 0))
+  qs.set('insurance_opt_in', insuranceOptIn ? 'true' : 'false')
+  return request(`/shipments/insurance/quote?${qs.toString()}`, { token })
+}
+
+export async function getShipmentInsurancePolicy(token) {
+  return request('/shipments/insurance/policy', { token })
 }
 
 export async function updateShipmentStatus(token, shipmentId, payload) {

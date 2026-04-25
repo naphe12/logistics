@@ -16,12 +16,29 @@ import UssdSimulatorPage from './pages/UssdSimulatorPage'
 import './styles.css'
 
 export default function App() {
-  const { token } = useAuth()
+  const { dashboardRole, userProfile } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
   const isPublicHome = location.pathname === '/'
   const hideShell = isAuthPage || isPublicHome
+
+  const topbarByRole = {
+    client: {
+      eyebrow: 'Espace Client',
+      title: 'Logix Customer Desk',
+    },
+    agent: {
+      eyebrow: 'Espace Agent',
+      title: 'Logix Field Operations',
+    },
+    admin: {
+      eyebrow: 'Backoffice Admin',
+      title: 'Logix Control Tower',
+    },
+  }
+  const topbar = topbarByRole[dashboardRole] || topbarByRole.client
+  const displayName = [userProfile?.first_name, userProfile?.last_name].filter(Boolean).join(' ').trim()
 
   useEffect(() => {
     function onSessionExpired() {
@@ -38,9 +55,15 @@ export default function App() {
       <div className={isAuthPage ? 'auth-content' : isPublicHome ? 'public-content' : 'content-area'}>
         {!hideShell ? (
           <header className="dashboard-topbar">
-            <div>
-              <p className="eyebrow">Backoffice</p>
-              <h1>Logix Operations</h1>
+            <div className="topbar-grid">
+              <div>
+                <p className="eyebrow">{topbar.eyebrow}</p>
+                <h1>{topbar.title}</h1>
+              </div>
+              <div className="topbar-user">
+                <p>{displayName || 'Utilisateur connecte'}</p>
+                <span>{userProfile?.phone_e164 || '-'}</span>
+              </div>
             </div>
           </header>
         ) : null}

@@ -14,7 +14,12 @@ from sqlalchemy import or_
 from app.schemas.incidents import ClaimCreate, IncidentCreate
 from app.services.audit_service import log_action
 from app.services.insurance_service import InsuranceValidationError, validate_claim_policy
-from app.config import INSURANCE_CLAIM_REVIEW_SLA_HOURS
+from app.services.notification_service import queue_and_send_sms
+from app.config import (
+    INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+    CLAIMS_ESCALATION_NOTIFY_ROLES,
+    CLAIMS_ANTIFRAUD_HIGH_RISK_THRESHOLD,
+)
 
 
 class IncidentError(Exception):
@@ -27,6 +32,103 @@ class IncidentNotFoundError(IncidentError):
 
 class IncidentValidationError(IncidentError):
     pass
+
+
+def _to_decimal(value: Decimal | int | float | str | None) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _user_types_from_config(raw_roles: list[str]) -> list[UserTypeEnum]:
+    result: list[UserTypeEnum] = []
+    for raw in raw_roles:
+        normalized = (raw or "").strip().lower()
+        if not normalized:
+            continue
+        try:
+            result.append(UserTypeEnum(normalized))
+        except ValueError:
+            continue
+    return result
+
+
+def _compute_claim_risk(
+    db: Session,
+    *,
+    shipment: Shipment,
+    claim_type: str,
+    amount_requested: Decimal,
+    proof_urls: list[str] | None,
+    reason: str,
+) -> tuple[Decimal, list[str]]:
+    score = Decimal("0")
+    flags: list[str] = []
+
+    coverage = _to_decimal(shipment.coverage_amount)
+    declared = _to_decimal(shipment.declared_value)
+    insurance_fee = _to_decimal(shipment.insurance_fee)
+
+    if insurance_fee <= 0:
+        score += Decimal("15")
+        flags.append("uninsured_or_zero_premium")
+
+    baseline = coverage if coverage > 0 else declared
+    if baseline > 0:
+        ratio = amount_requested / baseline
+        if ratio >= Decimal("0.90"):
+            score += Decimal("25")
+            flags.append("high_requested_to_coverage_ratio")
+        elif ratio >= Decimal("0.70"):
+            score += Decimal("15")
+            flags.append("elevated_requested_to_coverage_ratio")
+    else:
+        score += Decimal("20")
+        flags.append("missing_value_baseline")
+
+    clean_proofs = [item for item in (proof_urls or []) if item and item.strip()]
+    if not clean_proofs:
+        score += Decimal("10")
+        flags.append("missing_proof")
+
+    if len((reason or "").strip()) < 20:
+        score += Decimal("10")
+        flags.append("short_reason")
+
+    if (claim_type or "").strip().lower() == "lost":
+        score += Decimal("10")
+        flags.append("loss_claim")
+
+    if shipment.created_at:
+        age_hours = (datetime.now(UTC) - shipment.created_at).total_seconds() / 3600
+        if age_hours <= 2:
+            score += Decimal("15")
+            flags.append("very_early_claim")
+
+    recent_sender_claims = 0
+    if shipment.sender_phone:
+        since = datetime.now(UTC) - timedelta(days=30)
+        recent_sender_claims = (
+            db.query(Claim)
+            .join(Shipment, Shipment.id == Claim.shipment_id)
+            .filter(
+                Shipment.sender_phone == shipment.sender_phone,
+                Claim.created_at >= since,
+            )
+            .count()
+        )
+        if recent_sender_claims >= 3:
+            score += Decimal("20")
+            flags.append("sender_high_claim_frequency_30d")
+        elif recent_sender_claims == 2:
+            score += Decimal("10")
+            flags.append("sender_repeat_claims_30d")
+
+    if score > Decimal("100"):
+        score = Decimal("100")
+    return score.quantize(Decimal("0.01")), flags
 
 
 def list_incident_statuses(db: Session) -> list[IncidentStatus]:
@@ -194,6 +296,15 @@ def create_claim(db: Session, payload: ClaimCreate, current_user: User | None = 
         )
     except InsuranceValidationError as exc:
         raise IncidentValidationError(str(exc)) from exc
+    risk_score, risk_flags = _compute_claim_risk(
+        db,
+        shipment=shipment,
+        claim_type=claim_type,
+        amount_requested=requested_amount,
+        proof_urls=payload.proof_urls,
+        reason=payload.reason,
+    )
+    high_risk = risk_score >= Decimal(str(CLAIMS_ANTIFRAUD_HIGH_RISK_THRESHOLD))
 
     claim = Claim(
         incident_id=payload.incident_id,
@@ -203,6 +314,8 @@ def create_claim(db: Session, payload: ClaimCreate, current_user: User | None = 
         amount_approved=None,
         claim_type=claim_type,
         proof_urls=payload.proof_urls,
+        risk_score=risk_score,
+        risk_flags=risk_flags,
         status="submitted",
         reason=payload.reason,
     )
@@ -215,6 +328,16 @@ def create_claim(db: Session, payload: ClaimCreate, current_user: User | None = 
             ),
         )
     )
+    if high_risk:
+        db.add(
+            IncidentUpdate(
+                incident_id=payload.incident_id,
+                message=(
+                    f"Fraud risk alert: score={risk_score} "
+                    f"flags={', '.join(risk_flags) if risk_flags else 'none'}."
+                ),
+            )
+        )
     db.add(claim)
     log_action(db, entity="claims", action="create")
     db.commit()
@@ -562,4 +685,162 @@ def get_claims_ops_stats(
         "approved_total": approved_total,
         "paid_total": paid_total,
         "avg_resolution_hours": avg_resolution_hours,
+    }
+
+
+def auto_escalate_stale_claims(
+    db: Session,
+    *,
+    stale_hours: int = INSURANCE_CLAIM_REVIEW_SLA_HOURS,
+    limit: int = 200,
+    dry_run: bool = False,
+    notify_internal: bool = True,
+) -> dict:
+    stale_hours = max(1, min(int(stale_hours), 24 * 30))
+    limit = max(1, min(int(limit), 500))
+    cutoff = datetime.now(UTC) - timedelta(hours=stale_hours)
+    now = datetime.now(UTC)
+
+    candidates = (
+        db.query(Claim)
+        .filter(
+            Claim.status.in_(["submitted", "reviewing"]),
+            Claim.created_at <= cutoff,
+        )
+        .order_by(Claim.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+    escalated = 0
+    for claim in candidates:
+        escalated += 1
+        if dry_run:
+            continue
+        if claim.status == "submitted":
+            claim.status = "reviewing"
+        claim.escalated_at = now
+        note = claim.resolution_note or ""
+        append = f"[auto_escalated_after_{stale_hours}h@{now.isoformat()}]"
+        claim.resolution_note = f"{note} {append}".strip()
+
+    notified_recipients = 0
+    if escalated > 0 and not dry_run:
+        log_action(db, entity="claims", action="auto_escalate_stale", status_code=escalated)
+        if notify_internal:
+            roles = _user_types_from_config(CLAIMS_ESCALATION_NOTIFY_ROLES)
+            if roles:
+                recipients = (
+                    db.query(User)
+                    .filter(User.user_type.in_(roles), User.phone_e164.is_not(None))
+                    .all()
+                )
+                message = (
+                    f"[CLAIMS-SLA] {escalated} reclamation(s) escaladee(s) "
+                    f"(>{stale_hours}h). Action immediate requise."
+                )
+                for user in recipients:
+                    queue_and_send_sms(db, user.phone_e164, message, respect_preferences=True)
+                notified_recipients = len(recipients)
+        db.commit()
+
+    return {
+        "examined": len(candidates),
+        "escalated": escalated,
+        "notified_recipients": notified_recipients,
+        "stale_hours": stale_hours,
+        "dry_run": dry_run,
+    }
+
+
+def get_insurance_finance_report(
+    db: Session,
+    *,
+    months: int = 6,
+) -> dict:
+    months = max(1, min(int(months), 36))
+    now = datetime.now(UTC)
+    this_month = datetime(now.year, now.month, 1, tzinfo=UTC)
+
+    points: list[dict] = []
+    total_premiums = Decimal("0")
+    total_requested = Decimal("0")
+    total_approved = Decimal("0")
+    total_paid = Decimal("0")
+
+    for back in range(months - 1, -1, -1):
+        year = this_month.year
+        month = this_month.month - back
+        while month <= 0:
+            month += 12
+            year -= 1
+        while month > 12:
+            month -= 12
+            year += 1
+        start = datetime(year, month, 1, tzinfo=UTC)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=UTC)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=UTC)
+
+        premiums_collected = _to_decimal(
+            db.query(func.coalesce(func.sum(Shipment.insurance_fee), 0))
+            .filter(
+                Shipment.created_at >= start,
+                Shipment.created_at < end,
+                Shipment.insurance_fee.is_not(None),
+                Shipment.insurance_fee > 0,
+            )
+            .scalar()
+        )
+        claims_requested = _to_decimal(
+            db.query(func.coalesce(func.sum(Claim.amount_requested), 0))
+            .filter(Claim.created_at >= start, Claim.created_at < end)
+            .scalar()
+        )
+        claims_approved = _to_decimal(
+            db.query(func.coalesce(func.sum(Claim.amount_approved), 0))
+            .filter(Claim.updated_at >= start, Claim.updated_at < end, Claim.status.in_(["approved", "paid"]))
+            .scalar()
+        )
+        claims_paid = _to_decimal(
+            db.query(func.coalesce(func.sum(Claim.amount_approved), 0))
+            .filter(Claim.updated_at >= start, Claim.updated_at < end, Claim.status == "paid")
+            .scalar()
+        )
+        margin = premiums_collected - claims_paid
+        loss_ratio_pct = float((claims_paid / premiums_collected) * Decimal("100")) if premiums_collected > 0 else 0.0
+
+        point = {
+            "month": f"{start.year:04d}-{start.month:02d}",
+            "premiums_collected": premiums_collected.quantize(Decimal("0.01")),
+            "claims_requested": claims_requested.quantize(Decimal("0.01")),
+            "claims_approved": claims_approved.quantize(Decimal("0.01")),
+            "claims_paid": claims_paid.quantize(Decimal("0.01")),
+            "margin": margin.quantize(Decimal("0.01")),
+            "loss_ratio_pct": round(loss_ratio_pct, 2),
+        }
+        points.append(point)
+
+        total_premiums += premiums_collected
+        total_requested += claims_requested
+        total_approved += claims_approved
+        total_paid += claims_paid
+
+    total_margin = total_premiums - total_paid
+    total_loss_ratio_pct = float((total_paid / total_premiums) * Decimal("100")) if total_premiums > 0 else 0.0
+    totals = {
+        "month": "total",
+        "premiums_collected": total_premiums.quantize(Decimal("0.01")),
+        "claims_requested": total_requested.quantize(Decimal("0.01")),
+        "claims_approved": total_approved.quantize(Decimal("0.01")),
+        "claims_paid": total_paid.quantize(Decimal("0.01")),
+        "margin": total_margin.quantize(Decimal("0.01")),
+        "loss_ratio_pct": round(total_loss_ratio_pct, 2),
+    }
+
+    return {
+        "months": months,
+        "points": points,
+        "totals": totals,
     }
