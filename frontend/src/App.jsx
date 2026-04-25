@@ -8,6 +8,7 @@ import BackofficePage from './pages/BackofficePage'
 import HomePage from './pages/HomePage'
 import IncidentsPage from './pages/IncidentsPage'
 import PaymentsPage from './pages/PaymentsPage'
+import RegisterPage from './pages/RegisterPage'
 import RelaysPage from './pages/RelaysPage'
 import ShipmentsPage from './pages/ShipmentsPage'
 import TrackingPage from './pages/TrackingPage'
@@ -20,8 +21,9 @@ export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
+  const isRegisterPage = location.pathname === '/register'
   const isPublicHome = location.pathname === '/'
-  const hideShell = isAuthPage || isPublicHome
+  const hideShell = isAuthPage || isRegisterPage || isPublicHome
 
   const topbarByRole = {
     client: {
@@ -50,9 +52,11 @@ export default function App() {
   }, [navigate])
 
   return (
-    <main className={isAuthPage ? 'auth-app' : isPublicHome ? 'public-app' : 'app-shell'}>
+    <main className={isAuthPage || isRegisterPage ? 'auth-app' : isPublicHome ? 'public-app' : 'app-shell'}>
       {hideShell ? null : <Sidebar />}
-      <div className={isAuthPage ? 'auth-content' : isPublicHome ? 'public-content' : 'content-area'}>
+      <div
+        className={isAuthPage || isRegisterPage ? 'auth-content' : isPublicHome ? 'public-content' : 'content-area'}
+      >
         {!hideShell ? (
           <header className="dashboard-topbar">
             <div className="topbar-grid">
@@ -71,6 +75,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route
             path="/dashboard"
             element={

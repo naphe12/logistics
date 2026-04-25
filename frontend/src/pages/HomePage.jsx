@@ -53,7 +53,7 @@ export default function HomePage() {
             humaine.
           </p>
           <div className="home-cta-row">
-            <Link to="/auth?mode=register" className="button-link">
+            <Link to="/register" className="button-link">
               Creer un compte
             </Link>
             <Link to="/auth" className="button-link button-ghost">
