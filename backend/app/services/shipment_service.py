@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from statistics import median
@@ -44,6 +45,35 @@ ETA_STAGNATION_THRESHOLDS_HOURS: dict[str, int] = {
     "in_transit": 18,
     "arrived_at_relay": 10,
 }
+SMS_STATUS_MESSAGES: dict[str, str] = {
+    "picked_up": "Votre colis {shipment_no} a ete pris en charge.",
+    "in_transit": "Votre colis {shipment_no} est en transit.",
+    "arrived_at_relay": "Votre colis {shipment_no} est arrive au point relais.",
+    "ready_for_pickup": "Votre colis {shipment_no} est pret pour retrait.",
+    "delivered": "Votre colis {shipment_no} a ete livre avec succes.",
+}
+
+PRICE_BASE_BIF = Decimal("2500")
+PRICE_FUEL_RATE = Decimal("0.12")
+PRICE_CONGESTION_THRESHOLD = Decimal("0.85")
+PRICE_CONGESTION_RATE = Decimal("0.35")
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"))
+
+
+def _maybe_send_status_sms(db: Session, shipment: Shipment, status: str | None) -> None:
+    if not status:
+        return
+    template = SMS_STATUS_MESSAGES.get(status)
+    if not template:
+        return
+    message = template.format(shipment_no=shipment.shipment_no)
+    if shipment.sender_phone:
+        queue_and_send_sms(db, shipment.sender_phone, message)
+    if shipment.receiver_phone and shipment.receiver_phone != shipment.sender_phone:
+        queue_and_send_sms(db, shipment.receiver_phone, message)
 
 
 def _apply_visibility_scope(query, current_user: User):
@@ -170,6 +200,79 @@ def get_insurance_policy_summary() -> dict[str, object]:
     }
 
 
+def get_corridor_price_estimate(
+    db: Session,
+    *,
+    origin_relay_id,
+    destination_relay_id,
+    declared_value: Decimal | float | int | str | None,
+    insurance_opt_in: bool,
+) -> dict[str, object]:
+    if not origin_relay_id or not destination_relay_id:
+        raise ValueError("origin_relay_id and destination_relay_id are required")
+
+    origin = db.query(RelayPoint).filter(RelayPoint.id == origin_relay_id).first()
+    destination = db.query(RelayPoint).filter(RelayPoint.id == destination_relay_id).first()
+    if not origin or not destination:
+        raise ValueError("Relay not found for price estimate")
+
+    corridor_code = f"{origin.relay_code or origin.id}->{destination.relay_code or destination.id}"
+
+    corridor_multiplier = Decimal("1.00")
+    if origin_relay_id != destination_relay_id:
+        corridor_multiplier += Decimal("0.45")
+    if (origin.type or "").lower() == "hub" or (destination.type or "").lower() == "hub":
+        corridor_multiplier += Decimal("0.20")
+
+    base_price = _money(PRICE_BASE_BIF * corridor_multiplier)
+    fuel_surcharge = _money(base_price * PRICE_FUEL_RATE)
+
+    congestion_surcharge = Decimal("0")
+    if destination.storage_capacity and destination.storage_capacity > 0:
+        present_count = (
+            db.query(RelayInventory)
+            .filter(
+                RelayInventory.relay_id == destination.id,
+                RelayInventory.present.is_(True),
+            )
+            .count()
+        )
+        utilization = Decimal(str(present_count / destination.storage_capacity))
+        if utilization >= PRICE_CONGESTION_THRESHOLD:
+            congestion_ratio = utilization - PRICE_CONGESTION_THRESHOLD
+            congestion_surcharge = _money(base_price * (PRICE_CONGESTION_RATE * congestion_ratio))
+
+    insurance_quote = compute_insurance_quote(
+        declared_value=Decimal(str(declared_value)) if declared_value is not None else None,
+        insurance_opt_in=insurance_opt_in,
+    )
+    insurance_fee = _money(insurance_quote.insurance_fee)
+    total_estimated = _money(base_price + fuel_surcharge + congestion_surcharge + insurance_fee)
+
+    historical_samples = (
+        db.query(Shipment.id)
+        .filter(Shipment.status == "delivered")
+        .filter(Shipment.origin == origin_relay_id)
+        .filter(Shipment.destination == destination_relay_id)
+        .count()
+    )
+    confidence = "high" if historical_samples >= 20 else "medium" if historical_samples >= 5 else "low"
+
+    return {
+        "origin_relay_id": origin.id,
+        "destination_relay_id": destination.id,
+        "corridor_code": corridor_code,
+        "base_price_bif": base_price,
+        "fuel_surcharge_bif": fuel_surcharge,
+        "congestion_surcharge_bif": congestion_surcharge,
+        "insurance_fee_bif": insurance_fee,
+        "total_estimated_bif": total_estimated,
+        "currency": "BIF",
+        "confidence": confidence,
+        "historical_samples": historical_samples,
+    }
+
+
 def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpdate) -> Shipment:
     shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
     if not shipment:
@@ -186,6 +289,7 @@ def update_shipment_status(db: Session, shipment_id, payload: ShipmentStatusUpda
     )
     db.commit()
     db.refresh(shipment)
+    _maybe_send_status_sms(db, shipment, payload.status)
     emit_shipment_status_update(
         shipment_id=shipment.id,
         status=shipment.status or payload.status,
@@ -229,6 +333,68 @@ def create_shipment_event(
             relay_id=relay_id,
         )
     return event
+
+
+def get_public_tracking_by_shipment_no(
+    db: Session,
+    *,
+    shipment_no: str,
+    phone_e164: str,
+) -> dict[str, object]:
+    shipment = (
+        db.query(Shipment)
+        .filter(func.lower(Shipment.shipment_no) == shipment_no.strip().lower())
+        .first()
+    )
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    phone = phone_e164.strip()
+    if phone not in {shipment.sender_phone, shipment.receiver_phone}:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    now = datetime.now(UTC)
+    pseudo_user = User(
+        id=shipment.sender_id or uuid.uuid4(),
+        phone_e164=phone,
+        password_hash="",
+        user_type=UserTypeEnum.customer,
+    )
+    eta = get_shipment_eta(db, shipment.id, pseudo_user)
+
+    remaining_sla = max(0, eta.get("remaining_hours", 0))
+    sla_state = "late" if remaining_sla <= 0 else "at_risk" if remaining_sla <= 6 else "on_track"
+
+    events = (
+        db.query(ShipmentEvent)
+        .filter(ShipmentEvent.shipment_id == shipment.id)
+        .order_by(ShipmentEvent.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    recent_timeline = [
+        {
+            "occurred_at": event.created_at,
+            "kind": "shipment_event",
+            "code": event.event_type or "shipment_event",
+            "status": shipment.status,
+            "message": None,
+            "relay_id": event.relay_id,
+            "incident_id": None,
+            "extra": event.extra,
+        }
+        for event in events
+    ]
+
+    return {
+        "shipment_id": shipment.id,
+        "shipment_no": shipment.shipment_no,
+        "status": shipment.status,
+        "receiver_name": shipment.receiver_name,
+        "estimated_delivery_at": eta["estimated_delivery_at"],
+        "sla_state": sla_state,
+        "recent_timeline": recent_timeline,
+    }
 
 
 def list_shipments(
@@ -282,6 +448,134 @@ def get_shipment(db: Session, shipment_id, current_user: User) -> Shipment | Non
     query = db.query(Shipment).filter(Shipment.id == shipment_id)
     query = _apply_visibility_scope(query, current_user)
     return query.first()
+
+
+def update_pickup_slot(
+    db: Session,
+    shipment_id,
+    current_user: User,
+    *,
+    starts_at: datetime,
+    ends_at: datetime,
+    note: str | None = None,
+) -> Shipment:
+    shipment = get_shipment(db, shipment_id, current_user)
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    if ends_at <= starts_at:
+        raise ValueError("Pickup slot end must be after start")
+
+    extra = shipment.extra if isinstance(shipment.extra, dict) else {}
+    extra["pickup_slot"] = {
+        "starts_at": starts_at.isoformat(),
+        "ends_at": ends_at.isoformat(),
+        "note": note or None,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    shipment.extra = extra
+    db.add(
+        ShipmentEvent(
+            shipment_id=shipment.id,
+            relay_id=shipment.destination_relay_id or shipment.destination,
+            event_type="pickup_slot_selected",
+            extra={"starts_at": starts_at.isoformat(), "ends_at": ends_at.isoformat(), "note": note or None},
+        )
+    )
+    db.commit()
+    db.refresh(shipment)
+    return shipment
+
+
+def get_relay_pickup_forecast(
+    db: Session,
+    *,
+    relay_id,
+    hours: int = 24,
+) -> dict[str, object]:
+    hours = max(1, min(int(hours), 168))
+    now = datetime.now(UTC)
+    end_window = now + timedelta(hours=hours)
+
+    shipments = (
+        db.query(Shipment)
+        .filter(Shipment.destination.in_([relay_id]))
+        .filter(Shipment.status.in_(["arrived_at_relay", "ready_for_pickup"]))
+        .all()
+    )
+
+    buckets: dict[datetime, int] = defaultdict(int)
+    for shipment in shipments:
+        extra = shipment.extra if isinstance(shipment.extra, dict) else {}
+        slot = extra.get("pickup_slot") if isinstance(extra.get("pickup_slot"), dict) else None
+        if not slot:
+            continue
+        starts_at_raw = slot.get("starts_at")
+        if not starts_at_raw:
+            continue
+        try:
+            starts_at = datetime.fromisoformat(str(starts_at_raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if starts_at.tzinfo is None:
+            starts_at = starts_at.replace(tzinfo=UTC)
+        if starts_at < now or starts_at > end_window:
+            continue
+        slot_hour = starts_at.replace(minute=0, second=0, microsecond=0)
+        buckets[slot_hour] += 1
+
+    items = [
+        {"slot_hour": slot_hour, "planned_pickups": count}
+        for slot_hour, count in sorted(buckets.items(), key=lambda it: it[0])
+    ]
+    return {
+        "relay_id": relay_id,
+        "hours": hours,
+        "items": items,
+    }
+
+
+def capture_delivery_proof(
+    db: Session,
+    shipment_id,
+    *,
+    receiver_name: str,
+    signature: str,
+    geo_lat: float | None = None,
+    geo_lng: float | None = None,
+) -> Shipment:
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise ShipmentNotFoundError("Shipment not found")
+
+    extra = shipment.extra if isinstance(shipment.extra, dict) else {}
+    extra["delivery_proof"] = {
+        "receiver_name": receiver_name,
+        "signature": signature,
+        "geo_lat": geo_lat,
+        "geo_lng": geo_lng,
+        "captured_at": datetime.now(UTC).isoformat(),
+    }
+    shipment.extra = extra
+    shipment.status = "delivered"
+    db.add(
+        ShipmentEvent(
+            shipment_id=shipment.id,
+            relay_id=shipment.destination_relay_id or shipment.destination,
+            event_type="delivery_proof_captured",
+            extra={"receiver_name": receiver_name, "geo_lat": geo_lat, "geo_lng": geo_lng},
+        )
+    )
+    db.commit()
+    db.refresh(shipment)
+    _maybe_send_status_sms(db, shipment, "delivered")
+    emit_shipment_status_update(
+        shipment_id=shipment.id,
+        status="delivered",
+        event_type="delivery_proof_captured",
+        relay_id=shipment.destination_relay_id or shipment.destination,
+    )
+    return shipment
 
 
 def list_shipment_events(db: Session, shipment_id, current_user: User) -> list[ShipmentEvent]:
@@ -873,6 +1167,74 @@ def list_sla_risk_shipments(
     return {
         "items": items,
         "total": len(items),
+        "limit": limit,
+    }
+
+
+def list_my_shipments_sla_page(
+    db: Session,
+    current_user: User,
+    *,
+    direction: str = "all",
+    status: str | None = None,
+    q: str | None = None,
+    sort: str = "created_at_desc",
+    offset: int = 0,
+    limit: int = 20,
+    late_only: bool = False,
+) -> dict[str, object]:
+    if late_only:
+        candidates, _ = list_my_shipments(
+            db,
+            current_user,
+            direction=direction,
+            status=status,
+            q=q,
+            sort=sort,
+            offset=0,
+            limit=500,
+        )
+    else:
+        candidates, total = list_my_shipments(
+            db,
+            current_user,
+            direction=direction,
+            status=status,
+            q=q,
+            sort=sort,
+            offset=offset,
+            limit=limit,
+        )
+
+    rows: list[dict[str, object]] = []
+    for shipment in candidates:
+        summary = get_shipment_tracking_summary(db, shipment.id, current_user)
+        if late_only and summary["sla_state"] != "late":
+            continue
+        rows.append(
+            {
+                "shipment_id": shipment.id,
+                "shipment_no": shipment.shipment_no,
+                "status": shipment.status,
+                "created_at": shipment.created_at,
+                "sla_state": summary["sla_state"],
+                "remaining_sla_hours": summary["remaining_sla_hours"],
+                "open_incidents": summary["open_incidents"],
+                "risk_reasons": summary["risk_reasons"],
+                "estimated_delivery_at": summary["estimated_delivery_at"],
+            }
+        )
+
+    if late_only:
+        total = len(rows)
+        items = rows[offset : offset + limit]
+    else:
+        items = rows
+
+    return {
+        "items": items,
+        "total": total,
+        "offset": offset,
         "limit": limit,
     }
 

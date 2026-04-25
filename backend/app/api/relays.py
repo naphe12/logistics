@@ -45,6 +45,13 @@ def list_relays_endpoint(
     return list_relays(db)
 
 
+@router.get("/public", response_model=list[RelayOut])
+def list_public_relays_endpoint(
+    db: Session = Depends(get_db),
+):
+    return [relay for relay in list_relays(db) if relay.is_active]
+
+
 @router.get("/{relay_id}", response_model=RelayOut)
 def get_relay_endpoint(
     relay_id: UUID,

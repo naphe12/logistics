@@ -53,3 +53,13 @@ class NotificationPreferencesUpdateRequest(BaseModel):
     push_enabled: bool | None = None
     whatsapp_enabled: bool | None = None
     language: str | None = Field(default=None, min_length=2, max_length=10)
+
+
+class ShippingPreferencesOut(BaseModel):
+    preferred_relay_id: UUID | None = None
+    use_preferred_relay: bool = False
+
+
+class ShippingPreferencesUpdateRequest(BaseModel):
+    preferred_relay_id: UUID | None = None
+    use_preferred_relay: bool | None = None

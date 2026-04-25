@@ -181,6 +181,25 @@ class ShipmentTrackingSummaryOut(BaseModel):
     eta_basis: str
 
 
+class ShipmentClientSlaItem(BaseModel):
+    shipment_id: UUID
+    shipment_no: str | None = None
+    status: str | None = None
+    created_at: datetime | None = None
+    sla_state: str
+    remaining_sla_hours: int
+    open_incidents: int
+    risk_reasons: list[str] = Field(default_factory=list)
+    estimated_delivery_at: datetime
+
+
+class ShipmentClientSlaPage(BaseModel):
+    items: list[ShipmentClientSlaItem]
+    total: int
+    offset: int
+    limit: int
+
+
 class ShipmentSlaRiskPage(BaseModel):
     items: list[ShipmentTrackingSummaryOut]
     total: int
@@ -222,3 +241,56 @@ class ShipmentInsurancePolicyOut(BaseModel):
     damage_coverage_rate: Decimal
     require_proof: bool
     prohibited_items: list[str]
+
+
+class ShipmentPriceEstimateOut(BaseModel):
+    origin_relay_id: UUID | None = None
+    destination_relay_id: UUID | None = None
+    corridor_code: str
+    base_price_bif: Decimal
+    fuel_surcharge_bif: Decimal
+    congestion_surcharge_bif: Decimal
+    insurance_fee_bif: Decimal
+    total_estimated_bif: Decimal
+    currency: str = "BIF"
+    confidence: str
+    historical_samples: int | None = None
+
+
+class ShipmentPublicTrackRequest(BaseModel):
+    shipment_no: str = Field(min_length=3, max_length=80)
+    phone_e164: str = Field(min_length=8, max_length=20)
+
+
+class ShipmentPublicTrackOut(BaseModel):
+    shipment_id: UUID
+    shipment_no: str
+    status: str | None = None
+    receiver_name: str | None = None
+    estimated_delivery_at: datetime
+    sla_state: str
+    recent_timeline: list[ShipmentTimelineItem] = Field(default_factory=list)
+
+
+class ShipmentPickupSlotUpdateRequest(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+    note: str | None = Field(default=None, max_length=240)
+
+
+class ShipmentDeliveryProofCreateRequest(BaseModel):
+    receiver_name: str = Field(min_length=2, max_length=180)
+    signature: str = Field(min_length=2, max_length=2000)
+    geo_lat: float | None = None
+    geo_lng: float | None = None
+
+
+class RelayPickupForecastItem(BaseModel):
+    slot_hour: datetime
+    planned_pickups: int
+
+
+class RelayPickupForecastOut(BaseModel):
+    relay_id: UUID
+    hours: int
+    items: list[RelayPickupForecastItem] = Field(default_factory=list)

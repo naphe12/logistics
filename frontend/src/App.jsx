@@ -11,6 +11,7 @@ import PaymentsPage from './pages/PaymentsPage'
 import RegisterPage from './pages/RegisterPage'
 import RelaysPage from './pages/RelaysPage'
 import ShipmentsPage from './pages/ShipmentsPage'
+import PublicTrackingPage from './pages/PublicTrackingPage'
 import TrackingPage from './pages/TrackingPage'
 import TransportPage from './pages/TransportPage'
 import UssdSimulatorPage from './pages/UssdSimulatorPage'
@@ -22,8 +23,9 @@ export default function App() {
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
   const isRegisterPage = location.pathname === '/register'
+  const isPublicTrackPage = location.pathname === '/track'
   const isPublicHome = location.pathname === '/'
-  const hideShell = isAuthPage || isRegisterPage || isPublicHome
+  const hideShell = isAuthPage || isRegisterPage || isPublicHome || isPublicTrackPage
 
   const topbarByRole = {
     client: {
@@ -52,10 +54,20 @@ export default function App() {
   }, [navigate])
 
   return (
-    <main className={isAuthPage || isRegisterPage ? 'auth-app' : isPublicHome ? 'public-app' : 'app-shell'}>
+    <main
+      className={
+        isAuthPage || isRegisterPage
+          ? 'auth-app'
+          : isPublicHome || isPublicTrackPage
+            ? 'public-app'
+            : 'app-shell'
+      }
+    >
       {hideShell ? null : <Sidebar />}
       <div
-        className={isAuthPage || isRegisterPage ? 'auth-content' : isPublicHome ? 'public-content' : 'content-area'}
+        className={
+          isAuthPage || isRegisterPage ? 'auth-content' : isPublicHome || isPublicTrackPage ? 'public-content' : 'content-area'
+        }
       >
         {!hideShell ? (
           <header className="dashboard-topbar">
@@ -74,6 +86,7 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/track" element={<PublicTrackingPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route
@@ -103,7 +116,7 @@ export default function App() {
           <Route
             path="/tracking"
             element={
-              <ProtectedRoute allowedRoles={['agent', 'admin']}>
+              <ProtectedRoute allowedRoles={['client', 'agent', 'admin']}>
                 <TrackingPage />
               </ProtectedRoute>
             }

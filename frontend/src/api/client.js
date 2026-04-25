@@ -112,6 +112,29 @@ export async function checkHealth() {
   return request('/health')
 }
 
+export async function publicTrackShipment({ shipmentNo, phone }) {
+  return request('/shipments/public/track', {
+    method: 'POST',
+    body: { shipment_no: shipmentNo, phone_e164: phone },
+  })
+}
+
+export async function publicEstimateShipment({
+  originRelayId,
+  destinationRelayId,
+  declaredValue = null,
+  insuranceOptIn = false,
+}) {
+  const qs = new URLSearchParams()
+  qs.set('origin_relay_id', String(originRelayId))
+  qs.set('destination_relay_id', String(destinationRelayId))
+  if (declaredValue !== null && declaredValue !== undefined && declaredValue !== '') {
+    qs.set('declared_value', String(declaredValue))
+  }
+  qs.set('insurance_opt_in', insuranceOptIn ? 'true' : 'false')
+  return request(`/shipments/public/estimate?${qs.toString()}`)
+}
+
 export async function login(phone) {
   return request('/auth/login', {
     method: 'POST',
@@ -144,12 +167,105 @@ export async function getCurrentUser(token) {
   return request('/auth/me', { token })
 }
 
+export async function getMyShippingPreferences(token) {
+  return request('/auth/me/shipping-preferences', { token })
+}
+
+export async function updateMyShippingPreferences(token, payload) {
+  return request('/auth/me/shipping-preferences', {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function listShipments(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.sender_phone) qs.set('sender_phone', filters.sender_phone)
+  if (filters.receiver_phone) qs.set('receiver_phone', filters.receiver_phone)
+  if (filters.shipment_no) qs.set('shipment_no', filters.shipment_no)
+  if (filters.q) qs.set('q', filters.q)
+  if (filters.extra_key) qs.set('extra_key', filters.extra_key)
+  if (filters.extra_value !== undefined && filters.extra_value !== null) {
+    qs.set('extra_value', filters.extra_value)
+  }
+  if (filters.sort) qs.set('sort', filters.sort)
+  if (filters.offset !== undefined) qs.set('offset', String(filters.offset))
+  if (filters.limit !== undefined) qs.set('limit', String(filters.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/shipments${suffix}`, { token })
+}
+
+export async function listMyShipments(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.direction) qs.set('direction', filters.direction)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.q) qs.set('q', filters.q)
+  if (filters.extra_key) qs.set('extra_key', filters.extra_key)
+  if (filters.extra_value !== undefined && filters.extra_value !== null) {
+    qs.set('extra_value', filters.extra_value)
+  }
+  if (filters.sort) qs.set('sort', filters.sort)
+  if (filters.offset !== undefined) qs.set('offset', String(filters.offset))
+  if (filters.limit !== undefined) qs.set('limit', String(filters.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/shipments/my${suffix}`, { token })
+}
+
+export async function listMyShipmentsSlaSummary(token, filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.direction) qs.set('direction', filters.direction)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.q) qs.set('q', filters.q)
+  if (filters.sort) qs.set('sort', filters.sort)
+  if (filters.late_only !== undefined) qs.set('late_only', filters.late_only ? 'true' : 'false')
+  if (filters.offset !== undefined) qs.set('offset', String(filters.offset))
+  if (filters.limit !== undefined) qs.set('limit', String(filters.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/shipments/my/sla-summary${suffix}`, { token })
+}
+
 export async function createShipment(token, payload) {
   return request('/shipments', {
     method: 'POST',
     body: payload,
     token,
   })
+}
+
+export async function getShipmentPriceEstimate(
+  token,
+  { originRelayId, destinationRelayId, declaredValue = null, insuranceOptIn = false },
+) {
+  const qs = new URLSearchParams()
+  qs.set('origin_relay_id', String(originRelayId))
+  qs.set('destination_relay_id', String(destinationRelayId))
+  if (declaredValue !== null && declaredValue !== undefined && declaredValue !== '') {
+    qs.set('declared_value', String(declaredValue))
+  }
+  qs.set('insurance_opt_in', insuranceOptIn ? 'true' : 'false')
+  return request(`/shipments/pricing/estimate?${qs.toString()}`, { token })
+}
+
+export async function updateShipmentPickupSlot(token, shipmentId, payload) {
+  return request(`/shipments/${shipmentId}/pickup-slot`, {
+    method: 'PATCH',
+    body: payload,
+    token,
+  })
+}
+
+export async function createShipmentDeliveryProof(token, shipmentId, payload) {
+  return request(`/shipments/${shipmentId}/delivery-proof`, {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function getRelayPickupForecast(token, relayId, hours = 24) {
+  return request(`/shipments/relays/${relayId}/pickup-forecast?hours=${encodeURIComponent(hours)}`, { token })
 }
 
 export async function getShipmentInsuranceQuote(token, { declaredValue, insuranceOptIn = true }) {
@@ -173,6 +289,14 @@ export async function updateShipmentStatus(token, shipmentId, payload) {
 
 export async function getShipmentEta(token, shipmentId) {
   return request(`/shipments/${shipmentId}/eta`, { token })
+}
+
+export async function getShipmentTrackingSummary(token, shipmentId) {
+  return request(`/shipments/${shipmentId}/tracking-summary`, { token })
+}
+
+export async function getShipmentTimeline(token, shipmentId) {
+  return request(`/shipments/${shipmentId}/timeline`, { token })
 }
 
 export async function validatePickupCode(token, shipmentId, code) {
@@ -218,6 +342,10 @@ export async function listUsers(token, role) {
 
 export async function listRelays(token) {
   return request('/relays', { token })
+}
+
+export async function listPublicRelays() {
+  return request('/relays/public')
 }
 
 export async function createRelay(token, payload) {

@@ -14,6 +14,8 @@ from app.schemas.auth import (
     OTPRequest,
     OTPVerifyRequest,
     RefreshTokenRequest,
+    ShippingPreferencesOut,
+    ShippingPreferencesUpdateRequest,
     TokenResponse,
     UserOut,
     UserRoleUpdateRequest,
@@ -30,7 +32,9 @@ from app.services.auth_service import (
 )
 from app.services.user_preferences_service import (
     get_notification_preferences,
+    get_shipping_preferences,
     set_notification_preferences,
+    set_shipping_preferences,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -117,6 +121,20 @@ def update_me_notification_preferences(
     current_user: User = Depends(get_current_user),
 ):
     return set_notification_preferences(db, current_user, payload.model_dump())
+
+
+@router.get("/me/shipping-preferences", response_model=ShippingPreferencesOut)
+def me_shipping_preferences(current_user: User = Depends(get_current_user)):
+    return get_shipping_preferences(current_user)
+
+
+@router.patch("/me/shipping-preferences", response_model=ShippingPreferencesOut)
+def update_me_shipping_preferences(
+    payload: ShippingPreferencesUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return set_shipping_preferences(db, current_user, payload.model_dump())
 
 
 @router.get("/users", response_model=list[UserOut])

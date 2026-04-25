@@ -24,9 +24,16 @@ from app.schemas.shipments import (
     ShipmentStatusOut,
     ShipmentEtaOut,
     ShipmentExtraUpdate,
+    ShipmentClientSlaPage,
     ShipmentOverviewStats,
     ShipmentInsuranceQuoteOut,
     ShipmentInsurancePolicyOut,
+    ShipmentPriceEstimateOut,
+    ShipmentPublicTrackRequest,
+    ShipmentPublicTrackOut,
+    ShipmentPickupSlotUpdateRequest,
+    ShipmentDeliveryProofCreateRequest,
+    RelayPickupForecastOut,
     ShipmentTimeseriesStats,
     ShipmentStatusUpdate,
 )
@@ -42,6 +49,7 @@ from app.services.shipment_service import (
     list_shipment_events,
     list_my_shipments,
     list_sla_risk_shipments,
+    list_my_shipments_sla_page,
     list_shipments,
     list_shipment_statuses,
     shipment_status_exists,
@@ -50,6 +58,11 @@ from app.services.shipment_service import (
     get_shipment_eta,
     get_insurance_quote,
     get_insurance_policy_summary,
+    get_corridor_price_estimate,
+    get_public_tracking_by_shipment_no,
+    update_pickup_slot,
+    get_relay_pickup_forecast,
+    capture_delivery_proof,
     update_shipment_extra,
     update_shipment_status,
     ShipmentNotFoundError,
@@ -130,6 +143,70 @@ def shipment_insurance_policy_endpoint(
     ),
 ):
     return get_insurance_policy_summary()
+
+
+@router.get("/pricing/estimate", response_model=ShipmentPriceEstimateOut)
+def shipment_price_estimate_endpoint(
+    origin_relay_id: UUID = Query(...),
+    destination_relay_id: UUID = Query(...),
+    declared_value: float | None = Query(default=None, ge=0),
+    insurance_opt_in: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _user=Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return get_corridor_price_estimate(
+            db,
+            origin_relay_id=origin_relay_id,
+            destination_relay_id=destination_relay_id,
+            declared_value=declared_value,
+            insurance_opt_in=insurance_opt_in,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/public/estimate", response_model=ShipmentPriceEstimateOut)
+def shipment_public_price_estimate_endpoint(
+    origin_relay_id: UUID = Query(...),
+    destination_relay_id: UUID = Query(...),
+    declared_value: float | None = Query(default=None, ge=0),
+    insurance_opt_in: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_corridor_price_estimate(
+            db,
+            origin_relay_id=origin_relay_id,
+            destination_relay_id=destination_relay_id,
+            declared_value=declared_value,
+            insurance_opt_in=insurance_opt_in,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/public/track", response_model=ShipmentPublicTrackOut)
+def shipment_public_track_endpoint(
+    payload: ShipmentPublicTrackRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_public_tracking_by_shipment_no(
+            db,
+            shipment_no=payload.shipment_no,
+            phone_e164=payload.phone_e164,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[ShipmentOut])
@@ -268,6 +345,42 @@ def my_shipments_dashboard_endpoint(
     ),
 ):
     return get_my_shipments_dashboard(db, current_user)
+
+
+@router.get("/my/sla-summary", response_model=ShipmentClientSlaPage)
+def list_my_shipments_sla_summary_endpoint(
+    direction: Literal["all", "sent", "received"] = Query(default="all"),
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None, min_length=1, max_length=100),
+    sort: Literal["created_at_desc", "created_at_asc"] = Query(default="created_at_desc"),
+    late_only: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    if status:
+        _validate_status_or_422(db, status)
+    return list_my_shipments_sla_page(
+        db,
+        current_user,
+        direction=direction,
+        status=status,
+        q=q,
+        sort=sort,
+        offset=offset,
+        limit=limit,
+        late_only=late_only,
+    )
 
 
 @router.get("/my/export.csv")
@@ -438,6 +551,16 @@ def auto_detect_stagnation_incidents_endpoint(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/relays/{relay_id}/pickup-forecast", response_model=RelayPickupForecastOut)
+def relay_pickup_forecast_endpoint(
+    relay_id: UUID,
+    hours: int = Query(default=24, ge=1, le=168),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_roles(UserTypeEnum.agent, UserTypeEnum.hub, UserTypeEnum.admin)),
+):
+    return get_relay_pickup_forecast(db, relay_id=relay_id, hours=hours)
+
+
 @router.get("/{shipment_id}", response_model=ShipmentOut)
 def get_shipment_endpoint(
     shipment_id: UUID,
@@ -568,6 +691,63 @@ def create_shipment_event_endpoint(
             relay_id=payload.relay_id,
             status=payload.status,
             extra=payload.extra,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/{shipment_id}/pickup-slot", response_model=ShipmentOut)
+def update_shipment_pickup_slot_endpoint(
+    shipment_id: UUID,
+    payload: ShipmentPickupSlotUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserTypeEnum.customer,
+            UserTypeEnum.business,
+            UserTypeEnum.agent,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return update_pickup_slot(
+            db,
+            shipment_id,
+            current_user,
+            starts_at=payload.starts_at,
+            ends_at=payload.ends_at,
+            note=payload.note,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{shipment_id}/delivery-proof", response_model=ShipmentOut)
+def create_shipment_delivery_proof_endpoint(
+    shipment_id: UUID,
+    payload: ShipmentDeliveryProofCreateRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    try:
+        return capture_delivery_proof(
+            db,
+            shipment_id,
+            receiver_name=payload.receiver_name,
+            signature=payload.signature,
+            geo_lat=payload.geo_lat,
+            geo_lng=payload.geo_lng,
         )
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
