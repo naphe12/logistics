@@ -842,6 +842,34 @@ button:disabled {
   margin: 0 auto;
 }
 
+.public-home-minimal {
+  min-height: calc(100vh - 44px);
+  display: grid;
+  align-items: start;
+}
+
+.public-home-banner {
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  background:
+    radial-gradient(280px 140px at 100% -10%, rgba(255, 255, 255, 0.2), transparent 60%),
+    linear-gradient(135deg, #11426d 0%, #2f78b5 100%);
+  color: #fff;
+  padding: 28px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--glow-brand);
+}
+
+.public-home-banner h1 {
+  margin: 0;
+  font-family: 'Sora', 'Manrope', sans-serif;
+  font-size: clamp(2.2rem, 5.2vw, 3.8rem);
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
 .auth-wrap {
   display: grid;
   gap: 10px;
@@ -934,5 +962,12 @@ button:disabled {
 
   .preset-row {
     flex-direction: column;
+  }
+
+  .public-home-banner {
+    padding: 22px 16px;
+    gap: 14px;
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

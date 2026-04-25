@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { checkHealth } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import logisticsHero from '../assets/logistics-hero.svg'
@@ -27,9 +27,11 @@ const workflow = [
 ]
 
 export default function HomePage() {
-  const { dashboardRole } = useAuth()
+  const { dashboardRole, isAuthenticated } = useAuth()
+  const location = useLocation()
   const [health, setHealth] = useState('unknown')
   const [error, setError] = useState('')
+  const isPublicLanding = location.pathname === '/' && !isAuthenticated
 
   const homeByRole = {
     client: {
@@ -77,6 +79,19 @@ export default function HomePage() {
       setError(err.message)
       setHealth('down')
     }
+  }
+
+  if (isPublicLanding) {
+    return (
+      <section className="public-home-minimal">
+        <article className="public-home-banner">
+          <h1>LOGIX</h1>
+          <Link to="/auth" className="button-link">
+            Connexion
+          </Link>
+        </article>
+      </section>
+    )
   }
 
   return (
