@@ -8,6 +8,7 @@ import {
   listCommissions,
   listPaymentStatuses,
   listPayments,
+  listShipments,
   refundPayment,
 } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -28,17 +29,33 @@ export default function PaymentsPage() {
   const [statuses, setStatuses] = useState([])
   const [payments, setPayments] = useState([])
   const [commissions, setCommissions] = useState([])
+  const [shipments, setShipments] = useState([])
   const [filters, setFilters] = useState({ shipment_id: '', status: '', payer_phone: '' })
   const [createForm, setCreateForm] = useState(createDefaults)
 
+  const shipmentById = Object.fromEntries((shipments || []).map((row) => [row.id, row]))
+  const shipmentOptions = (shipments || []).map((row) => ({
+    id: row.id,
+    label: `${row.shipment_no || row.id} | ${humanizeStatus(row.status)} | ${row.receiver_name || row.receiver_phone || '-'}`,
+  }))
+
+  function shipmentLabel(shipmentId) {
+    const row = shipmentById[shipmentId]
+    if (row?.shipment_no) return row.shipment_no
+    if (!shipmentId) return '-'
+    return String(shipmentId).slice(0, 8).toUpperCase()
+  }
+
   async function loadStatusesAndPayments() {
     if (!token) return
-    const [statusData, paymentData] = await Promise.all([
+    const [statusData, paymentData, shipmentData] = await Promise.all([
       listPaymentStatuses(token),
       listPayments(token, filters),
+      listShipments(token, { limit: 400, sort: 'created_at_desc' }).catch(() => []),
     ])
     setStatuses(statusData)
     setPayments(paymentData)
+    setShipments(Array.isArray(shipmentData) ? shipmentData : [])
     const commissionData = await listCommissions(token)
     setCommissions(commissionData)
   }
@@ -105,12 +122,19 @@ export default function PaymentsPage() {
           <h3>Nouvelle transaction</h3>
           <form className="form" onSubmit={onCreatePayment}>
             <label>
-              Shipment ID
-              <input
+              Colis
+              <select
                 value={createForm.shipment_id}
                 onChange={(e) => setCreateForm((s) => ({ ...s, shipment_id: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Montant
@@ -158,11 +182,18 @@ export default function PaymentsPage() {
           <h3>Filtres</h3>
           <form className="form" onSubmit={onApplyFilters}>
             <label>
-              Shipment ID
-              <input
+              Colis
+              <select
                 value={filters.shipment_id}
                 onChange={(e) => setFilters((s) => ({ ...s, shipment_id: e.target.value }))}
-              />
+              >
+                <option value="">Tous</option>
+                {shipmentOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Statut
@@ -192,76 +223,122 @@ export default function PaymentsPage() {
 
       <article className="panel">
         <h3>Transactions</h3>
-        <div className="relay-list">
-          {payments.length === 0 ? <p>Aucune transaction</p> : null}
-          {payments.map((payment) => (
-            <div key={payment.id} className="relay-item">
-              <p>
-                <strong>{payment.id}</strong>
-              </p>
-              <p>
-                shipment: {payment.shipment_id} | montant: {payment.amount} | stage:{' '}
-                {humanizeCode(payment.payment_stage)} | provider: {payment.provider || '-'}
-              </p>
-              <p>
-                statut: <strong>{humanizeStatus(payment.status)}</strong> | ref: {payment.external_ref || '-'} |
-                payer:{' '}
-                {payment.payer_phone || '-'}
-              </p>
-              {payment.failure_reason ? <p>raison echec: {payment.failure_reason}</p> : null}
-              <div className="ops-actions">
-                <button
-                  type="button"
-                  onClick={() => runPaymentAction(initiatePayment, payment.id, '', 'Paiement initie')}
-                >
-                  Initier
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runPaymentAction(confirmPayment, payment.id, '', 'Paiement confirme')}
-                >
-                  Confirmer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runPaymentAction(failPayment, payment.id, 'payment_provider_error', 'Paiement marque en echec')}
-                >
-                  Marquer echec
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runPaymentAction(cancelPayment, payment.id, undefined, 'Paiement annule')}
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runPaymentAction(refundPayment, payment.id, 'claim_refund', 'Paiement rembourse')}
-                >
-                  Rembourser
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="premium-table-wrap">
+          {payments.length === 0 ? (
+            <p>Aucune transaction</p>
+          ) : (
+            <table className="premium-table">
+              <thead>
+                <tr>
+                  <th>Transaction</th>
+                  <th>Colis</th>
+                  <th>Montant</th>
+                  <th>Stage / Provider</th>
+                  <th>Statut</th>
+                  <th>Ref / Payer</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td className="mono">{String(payment.id).slice(0, 8).toUpperCase()}</td>
+                    <td>{shipmentLabel(payment.shipment_id)}</td>
+                    <td>{payment.amount}</td>
+                    <td>
+                      {humanizeCode(payment.payment_stage)} / {payment.provider || '-'}
+                    </td>
+                    <td>
+                      <span className="badge info">{humanizeStatus(payment.status)}</span>
+                    </td>
+                    <td>
+                      {payment.external_ref || '-'}
+                      <br />
+                      {payment.payer_phone || '-'}
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          onClick={() => runPaymentAction(initiatePayment, payment.id, '', 'Paiement initie')}
+                        >
+                          Initier
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runPaymentAction(confirmPayment, payment.id, '', 'Paiement confirme')}
+                        >
+                          Confirmer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            runPaymentAction(failPayment, payment.id, 'payment_provider_error', 'Paiement marque en echec')
+                          }
+                        >
+                          Echec
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runPaymentAction(cancelPayment, payment.id, undefined, 'Paiement annule')}
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runPaymentAction(refundPayment, payment.id, 'claim_refund', 'Paiement rembourse')}
+                        >
+                          Rembourser
+                        </button>
+                      </div>
+                      {payment.failure_reason ? <small>Raison: {payment.failure_reason}</small> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </article>
 
       <article className="panel">
         <h3>Commissions</h3>
-        <div className="relay-list">
-          {commissions.length === 0 ? <p>Aucune commission</p> : null}
-          {commissions.map((row) => (
-            <div key={row.id} className="relay-item">
-              <p>
-                <strong>{row.commission_type || '-'}</strong> | amount: {row.amount} | rate: {row.rate_pct}
-              </p>
-              <p>
-                payment: {row.payment_id || '-'} | shipment: {row.shipment_id || '-'} | beneficiary:{' '}
-                {row.beneficiary_kind || '-'}:{row.beneficiary_id || '-'}
-              </p>
-              <p>status: {humanizeStatus(row.status)}</p>
-            </div>
-          ))}
+        <div className="premium-table-wrap">
+          {commissions.length === 0 ? (
+            <p>Aucune commission</p>
+          ) : (
+            <table className="premium-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Montant</th>
+                  <th>Taux</th>
+                  <th>Paiement</th>
+                  <th>Colis</th>
+                  <th>Beneficiaire</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commissions.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.commission_type || '-'}</td>
+                    <td>{row.amount}</td>
+                    <td>{row.rate_pct}</td>
+                    <td className="mono">{row.payment_id ? String(row.payment_id).slice(0, 8).toUpperCase() : '-'}</td>
+                    <td>{shipmentLabel(row.shipment_id)}</td>
+                    <td>
+                      {row.beneficiary_kind || '-'}:{' '}
+                      <span className="mono">
+                        {row.beneficiary_id ? String(row.beneficiary_id).slice(0, 8).toUpperCase() : '-'}
+                      </span>
+                    </td>
+                    <td>{humanizeStatus(row.status)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </article>
 

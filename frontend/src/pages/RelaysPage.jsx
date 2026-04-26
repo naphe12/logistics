@@ -266,30 +266,55 @@ export default function RelaysPage() {
 
         <article className="panel">
           <h3>Relais existants</h3>
-          <div className="relay-list">
-            {relays.length === 0 ? <p>Aucun relais</p> : null}
-            {relays.map((relay) => (
-              <div key={relay.id} className="relay-item">
-                <p>
-                  <strong>{relay.name}</strong> ({relay.relay_code})
-                </p>
-                <p>
-                  {relay.type} | {relay.opening_hours || 'Horaires non definis'} | Cap:{' '}
-                  {relay.storage_capacity ?? '-'} | {relay.is_active ? 'Actif' : 'Inactif'}
-                </p>
-                <div className="ops-actions">
-                  <button type="button" onClick={() => setSelectedRelayId(relay.id)}>
-                    Selectionner
-                  </button>
-                  <button type="button" className="button-secondary" onClick={() => onEditRelay(relay)}>
-                    Editer
-                  </button>
-                  <button type="button" onClick={() => onDeleteRelay(relay.id)}>
-                    Supprimer
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="premium-table-wrap">
+            {relays.length === 0 ? (
+              <p>Aucun relais</p>
+            ) : (
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Relais</th>
+                    <th>Type</th>
+                    <th>Horaires</th>
+                    <th>Capacite</th>
+                    <th>Etat</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relays.map((relay) => (
+                    <tr key={relay.id}>
+                      <td>
+                        <strong>{relay.name || '-'}</strong>
+                        <br />
+                        <span className="mono">{relay.relay_code || '-'}</span>
+                      </td>
+                      <td>{relay.type || '-'}</td>
+                      <td>{relay.opening_hours || 'Horaires non definis'}</td>
+                      <td>{relay.storage_capacity ?? '-'}</td>
+                      <td>
+                        <span className={`badge ${relay.is_active ? 'success' : 'danger'}`}>
+                          {relay.is_active ? 'Actif' : 'Inactif'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="table-actions">
+                          <button type="button" onClick={() => setSelectedRelayId(relay.id)}>
+                            Selectionner
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => onEditRelay(relay)}>
+                            Editer
+                          </button>
+                          <button type="button" onClick={() => onDeleteRelay(relay.id)}>
+                            Supprimer
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </article>
       </section>

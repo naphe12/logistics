@@ -1898,3 +1898,86 @@ table td {
 .pro-kpi h3 {
   font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
+
+/* Form UX upgrade */
+.form {
+  gap: 12px;
+}
+
+.form > label {
+  padding: 10px 11px;
+  border: 1px solid #d4e1ee;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f9ff 100%);
+  font-weight: 600;
+  color: #2f4b66;
+}
+
+.form > label > input,
+.form > label > select,
+.form > label > textarea {
+  margin-top: 2px;
+  min-height: 42px;
+}
+
+.form .checkbox-row {
+  padding: 8px 10px;
+}
+
+.form button {
+  min-height: 42px;
+}
+
+.form .ops-actions {
+  margin-top: 2px;
+}
+
+/* Premium table */
+.premium-table-wrap {
+  border: 1px solid #d5e2ef;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  overflow: auto;
+}
+
+.premium-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.premium-table th,
+.premium-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e2ecf5;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.premium-table thead th {
+  background: #eef6ff;
+  color: #34516d;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.premium-table tbody tr:hover {
+  background: #f4f9ff;
+}
+
+.premium-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.table-actions button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 0.83rem;
+}

@@ -8,6 +8,7 @@ import {
   getTransportPrioritySuggestions,
   getTripManifest,
   listPublicRelays,
+  listShipments,
   listTransportRoutes,
   listTransportVehicles,
   listTrips,
@@ -45,6 +46,16 @@ function tripDisplayLabel(trip) {
   return `TRIP-${shortId(trip.id)}`
 }
 
+function shipmentOptionLabel(shipment, relayNameById = {}) {
+  if (!shipment) return '-'
+  const no = shipment.shipment_no || shortId(shipment.id)
+  const status = humanizeStatus(shipment.status || '-')
+  const receiver = shipment.receiver_name || shipment.receiver_phone || '-'
+  const destinationId = shipment.destination || shipment.destination_relay_id
+  const destination = relayDisplayName(destinationId, relayNameById)
+  return `${no} | ${status} | ${receiver} -> ${destination}`
+}
+
 export default function TransportPage() {
   const { token } = useAuth()
   const [error, setError] = useState('')
@@ -63,6 +74,8 @@ export default function TransportPage() {
   const [relayNameById, setRelayNameById] = useState({})
   const [routes, setRoutes] = useState([])
   const [vehicles, setVehicles] = useState([])
+  const [shipments, setShipments] = useState([])
+  const [relayOptions, setRelayOptions] = useState([])
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => trip.id === selectedTripId) || null,
@@ -78,6 +91,14 @@ export default function TransportPage() {
     for (const row of vehicles) map[row.id] = row
     return map
   }, [vehicles])
+  const manifestShipmentIds = useMemo(
+    () => new Set((manifestView?.shipments || []).map((item) => item.id)),
+    [manifestView],
+  )
+  const assignableShipments = useMemo(
+    () => shipments.filter((item) => item?.id && !manifestShipmentIds.has(item.id)),
+    [shipments, manifestShipmentIds],
+  )
 
   function routeLabel(routeId) {
     if (!routeId) return '-'
@@ -123,10 +144,17 @@ export default function TransportPage() {
     setPriorityQueue(data)
   }
 
+  async function loadShipmentsCatalog() {
+    if (!token) return
+    const data = await listShipments(token, { limit: 400, sort: 'created_at_desc' })
+    setShipments(Array.isArray(data) ? data : [])
+  }
+
   useEffect(() => {
     loadTrips().catch((err) => setError(err.message))
     loadGrouping().catch((err) => setError(err.message))
     loadPriorityQueue().catch((err) => setError(err.message))
+    loadShipmentsCatalog().catch((err) => setError(err.message))
     listTransportRoutes(token)
       .then((rows) => setRoutes(Array.isArray(rows) ? rows : []))
       .catch(() => setRoutes([]))
@@ -135,13 +163,17 @@ export default function TransportPage() {
       .catch(() => setVehicles([]))
     listPublicRelays()
       .then((rows) => {
+        setRelayOptions(Array.isArray(rows) ? rows : [])
         const map = {}
         for (const row of Array.isArray(rows) ? rows : []) {
           if (row?.id) map[row.id] = row.name || row.id
         }
         setRelayNameById(map)
       })
-      .catch(() => setRelayNameById({}))
+      .catch(() => {
+        setRelayOptions([])
+        setRelayNameById({})
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
@@ -200,6 +232,7 @@ export default function TransportPage() {
       await loadManifest(selectedTripId)
       await loadGrouping()
       await loadPriorityQueue()
+      await loadShipmentsCatalog()
     } catch (err) {
       setError(err.message)
     }
@@ -215,6 +248,7 @@ export default function TransportPage() {
       await loadManifest(selectedTripId)
       await loadGrouping()
       await loadPriorityQueue()
+      await loadShipmentsCatalog()
     } catch (err) {
       setError(err.message)
     }
@@ -393,15 +427,21 @@ export default function TransportPage() {
           </p>
           <form className="form" onSubmit={onAddShipmentToManifest}>
             <label>
-              Shipment ID
-              <input
+              Colis a ajouter
+              <select
                 value={shipmentIdInput}
                 onChange={(e) => setShipmentIdInput(e.target.value)}
-                placeholder="UUID shipment"
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {assignableShipments.map((shipment) => (
+                  <option key={shipment.id} value={shipment.id}>
+                    {shipmentOptionLabel(shipment, relayNameById)}
+                  </option>
+                ))}
+              </select>
             </label>
-            <button type="submit" disabled={!selectedTripId}>
+            <button type="submit" disabled={!selectedTripId || !shipmentIdInput}>
               Ajouter au manifest
             </button>
           </form>
@@ -426,12 +466,19 @@ export default function TransportPage() {
         <article className="panel">
           <h3>Scans depart / arrivee</h3>
           <label>
-            Relay ID (optionnel)
-            <input
+            Relais de scan (optionnel)
+            <select
               value={scanRelayId}
               onChange={(e) => setScanRelayId(e.target.value)}
-              placeholder="UUID relay"
-            />
+            >
+              <option value="">Auto (selon route/trip)</option>
+              {relayOptions.map((relay) => (
+                <option key={relay.id} value={relay.id}>
+                  {(relay.name || relay.relay_code || shortId(relay.id)) +
+                    (relay.relay_code ? ` (${relay.relay_code})` : '')}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="ops-actions">
             <button type="button" disabled={!selectedTripId} onClick={() => runScan(scanTripDeparture, 'Depart valide')}>
