@@ -15,6 +15,8 @@ from app.config import (
 from app.enums import CodePurposeEnum
 from app.models.shipments import Shipment
 from app.models.payments import PaymentTransaction
+from app.models.relays import RelayPoint
+from app.models.addresses import Address, Commune, Province
 from app.models.ussd import ShipmentCode, UssdLog, UssdSession
 from app.schemas.shipments import ShipmentCreate
 from app.schemas.payments import PaymentCreate
@@ -23,6 +25,7 @@ from app.services.payment_service import create_payment, initiate_payment
 from app.services.shipment_service import create_shipment
 
 SHIPMENT_NO_RE = re.compile(r"^[A-Z0-9-]{6,40}$")
+RELAY_CODE_RE = re.compile(r"^[A-Z0-9-]{2,30}$")
 
 
 def _menu() -> str:
@@ -108,6 +111,96 @@ def _active_pickup_code(db: Session, shipment_id) -> ShipmentCode | None:
     )
 
 
+def _find_active_relay_by_code(db: Session, relay_code: str) -> RelayPoint | None:
+    code = relay_code.strip().upper()
+    if not RELAY_CODE_RE.match(code):
+        return None
+    return (
+        db.query(RelayPoint)
+        .filter(
+            RelayPoint.relay_code == code,
+            RelayPoint.is_active.is_(True),
+        )
+        .first()
+    )
+
+
+def _normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _tokenize(value: str) -> list[str]:
+    return [tok for tok in re.split(r"[^a-zA-Z0-9]+", _normalize_text(value)) if tok]
+
+
+def _guess_destination_relays(db: Session, destination_text: str, limit: int = 3) -> list[RelayPoint]:
+    query_text = _normalize_text(destination_text)
+    tokens = _tokenize(destination_text)
+    if not query_text:
+        return []
+
+    rows = (
+        db.query(RelayPoint, Address, Commune, Province)
+        .outerjoin(Address, Address.id == RelayPoint.address_id)
+        .outerjoin(Commune, Commune.id == RelayPoint.commune_id)
+        .outerjoin(Province, Province.id == RelayPoint.province_id)
+        .filter(RelayPoint.is_active.is_(True))
+        .all()
+    )
+
+    scored: list[tuple[int, RelayPoint]] = []
+    for relay, address, commune, province in rows:
+        fields = [
+            relay.relay_code or "",
+            relay.name or "",
+            relay.type or "",
+            getattr(address, "province", "") or "",
+            getattr(address, "commune", "") or "",
+            getattr(address, "zone", "") or "",
+            getattr(address, "colline", "") or "",
+            getattr(address, "quartier", "") or "",
+            getattr(address, "address_line", "") or "",
+            getattr(address, "landmark", "") or "",
+            getattr(commune, "name", "") or "",
+            getattr(province, "name", "") or "",
+        ]
+        haystack = " ".join(_normalize_text(field) for field in fields if field).strip()
+        if not haystack:
+            continue
+
+        score = 0
+        if query_text in haystack:
+            score += 8
+        relay_code_l = _normalize_text(relay.relay_code or "")
+        relay_name_l = _normalize_text(relay.name or "")
+        if relay_code_l and query_text == relay_code_l:
+            score += 20
+        if relay_name_l and query_text == relay_name_l:
+            score += 12
+        for token in tokens:
+            if token in relay_name_l:
+                score += 4
+            if token in relay_code_l:
+                score += 5
+            if token in haystack:
+                score += 2
+        if score > 0:
+            scored.append((score, relay))
+
+    scored.sort(key=lambda row: row[0], reverse=True)
+    seen: set[str] = set()
+    top: list[RelayPoint] = []
+    for _score, relay in scored:
+        key = str(relay.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        top.append(relay)
+        if len(top) >= max(1, min(limit, 5)):
+            break
+    return top
+
+
 def get_or_create_session(db: Session, phone: str, ussd_session_id: str, service_code: str) -> UssdSession:
     normalized_phone = _normalize_phone(phone)
     session = db.query(UssdSession).filter(UssdSession.phone == normalized_phone).first()
@@ -151,12 +244,96 @@ def _route_send_shipment(db: Session, phone: str, parts: list[str]) -> str:
 
     if len(parts) == 3:
         return (
-            f"CON Confirmer envoi?\nDest: {receiver_name}\nTel: {receiver_phone}\n"
-            "1. Confirmer\n0. Retour\n00. Menu"
+            "CON Destination (ex: Gitega quartier Songa ou code relais):\n"
+            "0. Retour\n00. Menu"
         )
 
-    if parts[3].strip() != "1":
-        return "CON Confirmation invalide.\n1. Confirmer\n0. Retour\n00. Menu"
+    destination_input = parts[3].strip()
+    destination_relay = _find_active_relay_by_code(db, destination_input.upper())
+    payment_index = 4
+
+    if not destination_relay:
+        suggestions = _guess_destination_relays(db, destination_input, limit=3)
+        if not suggestions:
+            return (
+                "CON Destination non reconnue.\n"
+                "Entrez commune/quartier (ex: Gitega Songa):\n0. Retour\n00. Menu"
+            )
+        if len(parts) == 4:
+            lines = [f"{idx + 1}. {row.name} ({row.relay_code})" for idx, row in enumerate(suggestions)]
+            return (
+                "CON Relais proposes:\n"
+                + "\n".join(lines)
+                + "\nChoisir 1-3\n0. Retour\n00. Menu"
+            )
+        choice_raw = parts[4].strip()
+        if choice_raw not in {"1", "2", "3"}:
+            lines = [f"{idx + 1}. {row.name} ({row.relay_code})" for idx, row in enumerate(suggestions)]
+            return (
+                "CON Choix invalide.\n"
+                + "\n".join(lines)
+                + "\nChoisir 1-3\n0. Retour\n00. Menu"
+            )
+        choice = int(choice_raw)
+        if choice < 1 or choice > len(suggestions):
+            return "CON Choix hors options.\nReponse 1-3.\n0. Retour\n00. Menu"
+        destination_relay = suggestions[choice - 1]
+        payment_index = 5
+
+    if len(parts) == payment_index:
+        return (
+            "CON Paiement de ce colis?\n"
+            "1. Payer maintenant\n"
+            "2. Payer a la livraison\n"
+            "3. Sans paiement\n"
+            "0. Retour\n00. Menu"
+        )
+
+    payment_choice = parts[payment_index].strip()
+    if payment_choice not in {"1", "2", "3"}:
+        return (
+            "CON Choix invalide.\n"
+            "1. Payer maintenant\n"
+            "2. Payer a la livraison\n"
+            "3. Sans paiement\n"
+            "0. Retour\n00. Menu"
+        )
+
+    if payment_choice in {"1", "2"}:
+        amount_index = payment_index + 1
+        confirm_index = payment_index + 2
+        if len(parts) == amount_index:
+            return "CON Montant a payer (BIF):\n0. Retour\n00. Menu"
+        amount = _parse_amount(parts[amount_index])
+        if amount is None:
+            return "CON Montant invalide.\nMontant a payer (BIF):\n0. Retour\n00. Menu"
+        if len(parts) == confirm_index:
+            mode_label = "maintenant" if payment_choice == "1" else "a la livraison"
+            return (
+                "CON Confirmer creation?\n"
+                f"Exp: {phone}\n"
+                f"Dest: {receiver_name}\n"
+                f"Tel: {receiver_phone}\n"
+                f"Relais: {destination_relay.name} ({destination_relay.relay_code})\n"
+                f"Paiement: {mode_label} ({amount} BIF)\n"
+                "1. Confirmer\n0. Retour\n00. Menu"
+            )
+        if parts[confirm_index].strip() != "1":
+            return "CON Confirmation invalide.\n1. Confirmer\n0. Retour\n00. Menu"
+    else:
+        confirm_index = payment_index + 1
+        if len(parts) == confirm_index:
+            return (
+                "CON Confirmer creation?\n"
+                f"Exp: {phone}\n"
+                f"Dest: {receiver_name}\n"
+                f"Tel: {receiver_phone}\n"
+                f"Relais: {destination_relay.name} ({destination_relay.relay_code})\n"
+                "Paiement: plus tard\n"
+                "1. Confirmer\n0. Retour\n00. Menu"
+            )
+        if parts[confirm_index].strip() != "1":
+            return "CON Confirmation invalide.\n1. Confirmer\n0. Retour\n00. Menu"
 
     if _create_rate_limited(db, phone):
         return "END Limite de creation atteinte. Reessayez plus tard."
@@ -166,10 +343,54 @@ def _route_send_shipment(db: Session, phone: str, parts: list[str]) -> str:
         receiver_name=receiver_name,
         receiver_phone=receiver_phone,
         origin=None,
-        destination=None,
+        destination=destination_relay.id,
+        destination_relay_id=destination_relay.id,
     )
     shipment = create_shipment(db, payload, background_tasks=None)
-    return f"END Colis cree: {shipment.shipment_no}"
+    if payment_choice in {"1", "2"}:
+        amount = _parse_amount(parts[payment_index + 1])
+        if amount is None:
+            return f"END Colis cree: {shipment.shipment_no}. Paiement non cree (montant invalide)."
+        stage = "at_send" if payment_choice == "1" else "at_delivery"
+        created_payment = create_payment(
+            db,
+            PaymentCreate(
+                shipment_id=shipment.id,
+                amount=amount,
+                payer_phone=phone,
+                payment_stage=stage,
+                provider="ussd",
+                extra={"source": "ussd_create_flow"},
+            ),
+        )
+        if payment_choice == "1":
+            initiated = initiate_payment(
+                db,
+                created_payment.id,
+                external_ref=f"USSD-{shipment.shipment_no}-{str(created_payment.id).split('-')[0].upper()}",
+            )
+            return (
+                f"END Colis cree: {shipment.shipment_no}\n"
+                f"Payer: {phone}\n"
+                f"Dest: {receiver_phone}\n"
+                f"Relais: {destination_relay.name}\n"
+                f"Paiement initie ({amount} BIF)\n"
+                f"Ref: {initiated.external_ref}"
+            )
+        return (
+            f"END Colis cree: {shipment.shipment_no}\n"
+            f"Payer: {phone}\n"
+            f"Dest: {receiver_phone}\n"
+            f"Relais: {destination_relay.name}\n"
+            f"Paiement prevu a la livraison ({amount} BIF)"
+        )
+    return (
+        f"END Colis cree: {shipment.shipment_no}\n"
+        f"Expediteur: {phone}\n"
+        f"Destinataire: {receiver_phone}\n"
+        f"Relais destination: {destination_relay.name}\n"
+        "Paiement: a definir"
+    )
 
 
 def _route_track_shipment(db: Session, phone: str, parts: list[str]) -> str:

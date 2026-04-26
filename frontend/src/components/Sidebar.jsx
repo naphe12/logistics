@@ -3,33 +3,33 @@ import { useAuth } from '../auth/AuthContext'
 
 const navByRole = {
   client: [
-    { to: '/dashboard', label: 'Accueil client' },
-    { to: '/shipments', label: 'Envoyer colis' },
-    { to: '/shipment-schedules', label: 'Envois programmes' },
-    { to: '/tracking', label: 'Suivi colis' },
-    { to: '/incidents', label: 'Reclamations' },
-    { to: '/payments', label: 'Paiements' },
+    { to: '/dashboard', label: 'Accueil client', icon: '🏠' },
+    { to: '/shipments', label: 'Envoyer colis', icon: '📦' },
+    { to: '/shipment-schedules', label: 'Envois programmes', icon: '🗓️' },
+    { to: '/tracking', label: 'Suivi colis', icon: '🛰️' },
+    { to: '/incidents', label: 'Reclamations', icon: '🛟' },
+    { to: '/payments', label: 'Paiements', icon: '💳' },
   ],
   agent: [
-    { to: '/dashboard', label: 'Espace agent' },
-    { to: '/tracking', label: 'Operations terrain' },
-    { to: '/transport', label: 'Trips & scans' },
-    { to: '/shipments', label: 'Creation colis' },
-    { to: '/shipment-schedules', label: 'Envois programmes' },
-    { to: '/relays', label: 'Relais' },
-    { to: '/incidents', label: 'Incidents' },
+    { to: '/dashboard', label: 'Espace agent', icon: '🏠' },
+    { to: '/tracking', label: 'Operations terrain', icon: '🧭' },
+    { to: '/transport', label: 'Trips & scans', icon: '🚚' },
+    { to: '/shipments', label: 'Creation colis', icon: '📦' },
+    { to: '/shipment-schedules', label: 'Envois programmes', icon: '🗓️' },
+    { to: '/relays', label: 'Relais', icon: '🏪' },
+    { to: '/incidents', label: 'Incidents', icon: '⚠️' },
   ],
   admin: [
-    { to: '/dashboard', label: 'Pilotage global' },
-    { to: '/backoffice', label: 'Backoffice' },
-    { to: '/shipments', label: 'Colis' },
-    { to: '/shipment-schedules', label: 'Envois programmes' },
-    { to: '/tracking', label: 'Tracking live' },
-    { to: '/transport', label: 'Transport' },
-    { to: '/relays', label: 'Reseau relais' },
-    { to: '/payments', label: 'Paiements' },
-    { to: '/incidents', label: 'Incidents & claims' },
-    { to: '/ussd-simulator', label: 'USSD' },
+    { to: '/dashboard', label: 'Pilotage global', icon: '🏠' },
+    { to: '/backoffice', label: 'Backoffice', icon: '📊' },
+    { to: '/shipments', label: 'Colis', icon: '📦' },
+    { to: '/shipment-schedules', label: 'Envois programmes', icon: '🗓️' },
+    { to: '/tracking', label: 'Tracking live', icon: '🛰️' },
+    { to: '/transport', label: 'Transport', icon: '🚚' },
+    { to: '/relays', label: 'Reseau relais', icon: '🏪' },
+    { to: '/payments', label: 'Paiements', icon: '💳' },
+    { to: '/incidents', label: 'Incidents & claims', icon: '⚠️' },
+    { to: '/ussd-simulator', label: 'USSD', icon: '📱' },
   ],
 }
 
@@ -76,7 +76,12 @@ export default function Sidebar() {
               end={item.to === '/dashboard'}
               className={({ isActive }) => (isActive ? 'sidebar-link active' : 'sidebar-link')}
             >
-              {item.label}
+              <span className="sidebar-link-inner">
+                <span className="sidebar-link-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </span>
             </NavLink>
           ))}
         </nav>

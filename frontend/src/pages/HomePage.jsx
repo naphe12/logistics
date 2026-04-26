@@ -63,30 +63,35 @@ export default function HomePage() {
       value: pct(s1Kpis?.on_time_rate),
       delta: 'S1',
       tone: 'up',
+      icon: '⏱️',
     },
     {
       label: 'Incident Rate',
       value: pct(s1Kpis?.incident_rate),
       delta: 'S1',
       tone: 'down',
+      icon: '🚨',
     },
     {
       label: 'Scan Compliance',
       value: pct(s1Kpis?.scan_compliance),
       delta: 'S1',
       tone: 'up',
+      icon: '✅',
     },
     {
       label: 'Shipments (window)',
       value: typeof s1Kpis?.shipments_created === 'number' ? String(s1Kpis.shipments_created) : '--',
       delta: `${s1Kpis?.window_hours || 168}h`,
       tone: 'up',
+      icon: '📦',
     },
     {
       label: 'Incidents (window)',
       value: typeof s1Kpis?.incident_count === 'number' ? String(s1Kpis.incident_count) : '--',
       delta: `${s1Kpis?.window_hours || 168}h`,
       tone: 'down',
+      icon: '🧯',
     },
   ]
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -295,7 +300,12 @@ export default function HomePage() {
       <section className="pro-kpis">
         {kpis.map((kpi) => (
           <article key={kpi.label} className="pro-kpi">
-            <p>{kpi.label}</p>
+            <p className="pro-kpi-label">
+              <span>{kpi.label}</span>
+              <span className="pro-kpi-icon" aria-hidden="true">
+                {kpi.icon}
+              </span>
+            </p>
             <h3>{kpi.value}</h3>
             <span className={kpi.tone === 'up' ? 'delta up' : 'delta down'}>Than last month {kpi.delta}</span>
           </article>
