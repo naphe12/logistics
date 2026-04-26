@@ -105,6 +105,13 @@ export default function HomePage() {
   ]
   const chartMax = Math.max(...monthlyTime, ...monthlyRoute, 1)
   const lineMax = Math.max(...lineByCountry.flatMap((s) => s.values), 1)
+  const timePoints = monthlyTime
+    .map((v, i) => {
+      const x = (i / (monthlyTime.length - 1)) * 100
+      const y = 100 - (v / chartMax) * 100
+      return `${x},${y}`
+    })
+    .join(' ')
   const routePoints = monthlyRoute
     .map((v, i) => {
       const x = (i / (monthlyRoute.length - 1)) * 100
@@ -321,18 +328,16 @@ export default function HomePage() {
               <span className="legend-dot legend-route">Route</span>
             </div>
           </header>
-          <div className="barline-chart">
-            <div className="bars">
-              {monthlyTime.map((v, i) => (
-                <div key={monthLabels[i]} className="bar-col">
-                  <div className="bar" style={{ height: `${(v / chartMax) * 100}%` }} />
-                  <small>{monthLabels[i]}</small>
-                </div>
+          <div className="multi-line-chart dual-line-chart">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <polyline className="time-line" points={timePoints} />
+              <polyline className="route-line" points={routePoints} />
+            </svg>
+            <div className="month-strip">
+              {monthLabels.map((m) => (
+                <small key={m}>{m}</small>
               ))}
             </div>
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <polyline points={routePoints} />
-            </svg>
           </div>
         </article>
 

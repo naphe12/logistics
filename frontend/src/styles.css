@@ -622,6 +622,17 @@ a {
   stroke-linejoin: round;
 }
 
+.dual-line-chart .time-line {
+  stroke: #22a06b;
+  stroke-width: 2.1;
+}
+
+.dual-line-chart .route-line {
+  stroke: #2b70c9;
+  stroke-width: 2.1;
+  stroke-dasharray: 3 3;
+}
+
 .month-strip {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
