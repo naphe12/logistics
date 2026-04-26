@@ -8,6 +8,8 @@ import {
   getTransportPrioritySuggestions,
   getTripManifest,
   listPublicRelays,
+  listTransportRoutes,
+  listTransportVehicles,
   listTrips,
   removeShipmentFromManifest,
   scanTripArrival,
@@ -30,6 +32,19 @@ const defaultAutoAssignForm = {
   vehicleCapacity: '',
 }
 
+function shortId(value) {
+  if (!value) return '-'
+  const text = String(value)
+  return text.length > 8 ? text.slice(0, 8).toUpperCase() : text.toUpperCase()
+}
+
+function tripDisplayLabel(trip) {
+  if (!trip) return '-'
+  const fromExtra = trip.extra?.trip_no || trip.extra?.code || trip.extra?.trip_code
+  if (fromExtra) return String(fromExtra)
+  return `TRIP-${shortId(trip.id)}`
+}
+
 export default function TransportPage() {
   const { token } = useAuth()
   const [error, setError] = useState('')
@@ -46,11 +61,42 @@ export default function TransportPage() {
   const [autoAssignForm, setAutoAssignForm] = useState(defaultAutoAssignForm)
   const [autoAssignResult, setAutoAssignResult] = useState(null)
   const [relayNameById, setRelayNameById] = useState({})
+  const [routes, setRoutes] = useState([])
+  const [vehicles, setVehicles] = useState([])
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => trip.id === selectedTripId) || null,
     [trips, selectedTripId],
   )
+  const routeById = useMemo(() => {
+    const map = {}
+    for (const row of routes) map[row.id] = row
+    return map
+  }, [routes])
+  const vehicleById = useMemo(() => {
+    const map = {}
+    for (const row of vehicles) map[row.id] = row
+    return map
+  }, [vehicles])
+
+  function routeLabel(routeId) {
+    if (!routeId) return '-'
+    const route = routeById[routeId]
+    if (!route) return `Route ${shortId(routeId)}`
+    const origin = route.origin_name || route.origin_code || relayNameById[route.origin] || shortId(route.origin)
+    const destination =
+      route.destination_name || route.destination_code || relayNameById[route.destination] || shortId(route.destination)
+    return `${origin || '-'} -> ${destination || '-'}`
+  }
+
+  function vehicleLabel(vehicleId) {
+    if (!vehicleId) return '-'
+    const vehicle = vehicleById[vehicleId]
+    if (!vehicle) return `Vehicule ${shortId(vehicleId)}`
+    const plate = vehicle.plate || shortId(vehicle.id)
+    const partner = vehicle.partner_name ? ` (${vehicle.partner_name})` : ''
+    return `${plate}${partner}`
+  }
 
   async function loadTrips() {
     if (!token) return
@@ -81,6 +127,12 @@ export default function TransportPage() {
     loadTrips().catch((err) => setError(err.message))
     loadGrouping().catch((err) => setError(err.message))
     loadPriorityQueue().catch((err) => setError(err.message))
+    listTransportRoutes(token)
+      .then((rows) => setRoutes(Array.isArray(rows) ? rows : []))
+      .catch(() => setRoutes([]))
+    listTransportVehicles(token)
+      .then((rows) => setVehicles(Array.isArray(rows) ? rows : []))
+      .catch(() => setVehicles([]))
     listPublicRelays()
       .then((rows) => {
         const map = {}
@@ -255,20 +307,32 @@ export default function TransportPage() {
           <h3>{editingTripId ? 'Modifier trip' : 'Nouveau trip'}</h3>
           <form className="form" onSubmit={onCreateOrUpdateTrip}>
             <label>
-              Route ID (optionnel)
-              <input
+              Route (optionnel)
+              <select
                 value={tripForm.route_id}
                 onChange={(e) => setTripForm((s) => ({ ...s, route_id: e.target.value }))}
-                placeholder="UUID route"
-              />
+              >
+                <option value="">Aucune route</option>
+                {routes.map((route) => (
+                  <option key={route.id} value={route.id}>
+                    {routeLabel(route.id)}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
-              Vehicle ID (optionnel)
-              <input
+              Vehicule (optionnel)
+              <select
                 value={tripForm.vehicle_id}
                 onChange={(e) => setTripForm((s) => ({ ...s, vehicle_id: e.target.value }))}
-                placeholder="UUID vehicle"
-              />
+              >
+                <option value="">Aucun vehicule</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {vehicleLabel(vehicle.id)}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Statut
@@ -301,11 +365,11 @@ export default function TransportPage() {
             {trips.map((trip) => (
               <div key={trip.id} className="relay-item">
                 <p>
-                  <strong>{trip.id}</strong>
+                  <strong>{tripDisplayLabel(trip)}</strong>
                 </p>
                 <p>
-                  status: {humanizeStatus(trip.status)} | route: {trip.route_id || '-'} | vehicle:{' '}
-                  {trip.vehicle_id || '-'}
+                  status: {humanizeStatus(trip.status)} | route: {routeLabel(trip.route_id)} | vehicle:{' '}
+                  {vehicleLabel(trip.vehicle_id)}
                 </p>
                 <div className="ops-actions">
                   <button type="button" onClick={() => setSelectedTripId(trip.id)}>
@@ -325,7 +389,7 @@ export default function TransportPage() {
         <article className="panel">
           <h3>Manifest du trip</h3>
           <p>
-            Trip selectionne: <strong>{selectedTrip ? selectedTrip.id : '-'}</strong>
+            Trip selectionne: <strong>{selectedTrip ? tripDisplayLabel(selectedTrip) : '-'}</strong>
           </p>
           <form className="form" onSubmit={onAddShipmentToManifest}>
             <label>

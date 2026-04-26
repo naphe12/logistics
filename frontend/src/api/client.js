@@ -459,6 +459,14 @@ export async function listTrips(token) {
   return request('/transport/trips', { token })
 }
 
+export async function listTransportRoutes(token) {
+  return request('/transport/routes', { token })
+}
+
+export async function listTransportVehicles(token) {
+  return request('/transport/vehicles', { token })
+}
+
 export async function createTrip(token, payload) {
   return request('/transport/trips', {
     method: 'POST',

@@ -32,6 +32,23 @@ class TripOut(BaseModel):
         from_attributes = True
 
 
+class TransportRouteOut(BaseModel):
+    id: UUID
+    origin: UUID | None = None
+    destination: UUID | None = None
+    origin_name: str | None = None
+    origin_code: str | None = None
+    destination_name: str | None = None
+    destination_code: str | None = None
+
+
+class TransportVehicleOut(BaseModel):
+    id: UUID
+    partner_id: UUID | None = None
+    partner_name: str | None = None
+    plate: str | None = None
+
+
 class ManifestOut(BaseModel):
     id: UUID
     trip_id: UUID | None = None

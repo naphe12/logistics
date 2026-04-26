@@ -2,12 +2,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.incidents import Incident
 from app.models.relays import RelayPoint
 from app.models.shipments import Manifest, ManifestShipment, RelayInventory, Shipment, ShipmentEvent
-from app.models.transport import Route, Trip
+from app.models.transport import Route, TransportPartner, Trip, Vehicle
 from app.realtime.events import emit_shipment_status_update
 from app.services.relay_service import (
     RelayCapacityError,
@@ -564,6 +564,55 @@ def list_trips(
     if extra_key and extra_value is not None:
         query = query.filter(Trip.extra[extra_key].astext == extra_value)
     return query.order_by(Trip.id.desc()).all()
+
+
+def list_transport_routes_catalog(db: Session) -> list[dict]:
+    origin = aliased(RelayPoint)
+    destination = aliased(RelayPoint)
+    rows = (
+        db.query(
+            Route,
+            origin.name,
+            origin.relay_code,
+            destination.name,
+            destination.relay_code,
+        )
+        .outerjoin(origin, Route.origin == origin.id)
+        .outerjoin(destination, Route.destination == destination.id)
+        .order_by(Route.id.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": route.id,
+            "origin": route.origin,
+            "destination": route.destination,
+            "origin_name": origin_name,
+            "origin_code": origin_code,
+            "destination_name": destination_name,
+            "destination_code": destination_code,
+        }
+        for route, origin_name, origin_code, destination_name, destination_code in rows
+    ]
+
+
+def list_transport_vehicles_catalog(db: Session) -> list[dict]:
+    rows = (
+        db.query(Vehicle, TransportPartner.name)
+        .outerjoin(TransportPartner, Vehicle.partner_id == TransportPartner.id)
+        .order_by(Vehicle.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": vehicle.id,
+            "partner_id": vehicle.partner_id,
+            "partner_name": partner_name,
+            "plate": vehicle.plate,
+        }
+        for vehicle, partner_name in rows
+    ]
 
 
 def get_trip(db: Session, trip_id: UUID) -> Trip | None:

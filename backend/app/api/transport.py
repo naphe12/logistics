@@ -22,6 +22,8 @@ from app.schemas.transport import (
     TripScanRequest,
     TripScanResponse,
     TripUpdate,
+    TransportRouteOut,
+    TransportVehicleOut,
 )
 from app.services.transport_service import (
     ManifestShipmentError,
@@ -33,6 +35,8 @@ from app.services.transport_service import (
     create_trip,
     get_trip_manifest_with_shipments,
     list_trips,
+    list_transport_routes_catalog,
+    list_transport_vehicles_catalog,
     remove_shipment_from_manifest,
     replan_trip_from_incidents,
     scan_trip_arrival,
@@ -50,6 +54,22 @@ from app.services.idempotency_service import (
 )
 
 router = APIRouter(prefix="/transport", tags=["transport"])
+
+
+@router.get("/routes", response_model=list[TransportRouteOut])
+def list_transport_routes_endpoint(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub, UserTypeEnum.driver, UserTypeEnum.agent)),
+):
+    return list_transport_routes_catalog(db)
+
+
+@router.get("/vehicles", response_model=list[TransportVehicleOut])
+def list_transport_vehicles_endpoint(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles(UserTypeEnum.admin, UserTypeEnum.hub, UserTypeEnum.driver, UserTypeEnum.agent)),
+):
+    return list_transport_vehicles_catalog(db)
 
 
 @router.get("/trips", response_model=list[TripOut])

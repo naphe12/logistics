@@ -7,6 +7,7 @@ import {
   getRelayPickupForecast,
   getShipmentTimeline,
   getShipmentTrackingSummary,
+  listMyShipments,
   listPublicRelays,
   listShipments,
   openShipmentTrackingSocket,
@@ -55,6 +56,14 @@ function resolveStatusCode(item) {
   const code = String(item?.code || '')
   if (code.startsWith('shipment_')) return code.replace(/^shipment_/, '')
   return ''
+}
+
+function shipmentSelectLabel(shipment) {
+  if (!shipment) return '-'
+  const no = shipment.shipment_no || String(shipment.id || '').slice(0, 8)
+  const status = humanizeStatus(shipment.status || '-')
+  const receiver = shipment.receiver_name || shipment.receiver_phone || shipment.receiver_phone_e164 || '-'
+  return `${no} | ${status} | ${receiver}`
 }
 
 export default function TrackingPage() {
@@ -110,8 +119,13 @@ export default function TrackingPage() {
   const [forecastHours, setForecastHours] = useState(24)
   const [pickupForecast, setPickupForecast] = useState([])
   const [relayNameById, setRelayNameById] = useState({})
+  const [shipments, setShipments] = useState([])
 
   const liveHeadline = useMemo(() => liveShipmentId || '-', [liveShipmentId])
+  const shipmentOptions = useMemo(
+    () => (Array.isArray(shipments) ? shipments.map((row) => ({ id: row.id, label: shipmentSelectLabel(row) })) : []),
+    [shipments],
+  )
 
   useEffect(() => {
     listPublicRelays()
@@ -126,6 +140,32 @@ export default function TrackingPage() {
         setRelayNameById({})
       })
   }, [])
+
+  useEffect(() => {
+    if (!token) {
+      setShipments([])
+      return
+    }
+
+    const load = async () => {
+      const rows = isClientRole
+        ? await listMyShipments(token, { limit: 200, sort: 'created_at_desc' })
+        : await listShipments(token, { limit: 200, sort: 'created_at_desc' })
+      const data = Array.isArray(rows) ? rows : []
+      setShipments(data)
+      const defaultShipmentId = data[0]?.id || ''
+      if (!defaultShipmentId) return
+
+      setForm((s) => (s.shipment_id ? s : { ...s, shipment_id: defaultShipmentId }))
+      setPickupForm((s) => (s.shipment_id ? s : { ...s, shipment_id: defaultShipmentId }))
+      setPickupSlotForm((s) => (s.shipment_id ? s : { ...s, shipment_id: defaultShipmentId }))
+      setProofForm((s) => (s.shipment_id ? s : { ...s, shipment_id: defaultShipmentId }))
+      setSocketInput((s) => (s ? s : defaultShipmentId))
+      setEtaShipmentId((s) => (s ? s : defaultShipmentId))
+    }
+
+    load().catch(() => setShipments([]))
+  }, [token, isClientRole])
 
   useEffect(() => {
     if (!token || !liveShipmentId) {
@@ -508,13 +548,19 @@ export default function TrackingPage() {
             <h3>Statut colis</h3>
             <form className="form" onSubmit={onUpdate}>
               <label>
-                Shipment ID
-                <input
-                  placeholder="UUID"
+                Colis
+                <select
                   value={form.shipment_id}
                   onChange={(e) => setForm((s) => ({ ...s, shipment_id: e.target.value }))}
                   required
-                />
+                >
+                  <option value="">Selectionner un colis</option>
+                  {shipmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Nouveau statut
@@ -563,13 +609,19 @@ export default function TrackingPage() {
             <h3>Remise avec code pickup</h3>
             <form className="form" onSubmit={onValidatePickupCode}>
               <label>
-                Shipment ID
-                <input
-                  placeholder="UUID"
+                Colis
+                <select
                   value={pickupForm.shipment_id}
                   onChange={(e) => setPickupForm((s) => ({ ...s, shipment_id: e.target.value }))}
                   required
-                />
+                >
+                  <option value="">Selectionner un colis</option>
+                  {shipmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Code retrait
@@ -618,13 +670,19 @@ export default function TrackingPage() {
           <h3>Choisir un creneau de retrait</h3>
           <form className="form" onSubmit={onSavePickupSlot}>
             <label>
-              Shipment ID
-              <input
-                placeholder="UUID"
+              Colis
+              <select
                 value={pickupSlotForm.shipment_id}
                 onChange={(e) => setPickupSlotForm((s) => ({ ...s, shipment_id: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Debut creneau
@@ -666,13 +724,19 @@ export default function TrackingPage() {
             <h3>Preuve de remise digitale</h3>
             <form className="form" onSubmit={onCaptureDeliveryProof}>
               <label>
-                Shipment ID
-                <input
-                  placeholder="UUID"
+                Colis
+                <select
                   value={proofForm.shipment_id}
                   onChange={(e) => setProofForm((s) => ({ ...s, shipment_id: e.target.value }))}
                   required
-                />
+                >
+                  <option value="">Selectionner un colis</option>
+                  {shipmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Nom receveur
@@ -760,13 +824,19 @@ export default function TrackingPage() {
           <h3>Flux live WebSocket</h3>
           <form className="form" onSubmit={onConnectLive}>
             <label>
-              Shipment ID a ecouter
-              <input
-                placeholder="UUID"
+              Colis a ecouter
+              <select
                 value={socketInput}
                 onChange={(e) => setSocketInput(e.target.value)}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="ops-actions">
               <button type="submit" disabled={!token}>
@@ -795,13 +865,19 @@ export default function TrackingPage() {
           <h3>ETA livraison</h3>
           <form className="form" onSubmit={onFetchEta}>
             <label>
-              Shipment ID
-              <input
-                placeholder="UUID"
+              Colis
+              <select
                 value={etaShipmentId}
                 onChange={(e) => setEtaShipmentId(e.target.value)}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <button type="submit" disabled={!token}>
               Calculer ETA

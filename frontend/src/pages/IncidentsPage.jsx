@@ -10,6 +10,8 @@ import {
   listIncidentStatuses,
   listIncidentUpdates,
   listIncidents,
+  listMyShipments,
+  listShipments,
   updateClaimStatus,
   updateIncidentStatus,
 } from '../api/client'
@@ -18,6 +20,14 @@ import { formatDateTime, humanizeCode, humanizeStatus } from '../utils/display'
 
 const incidentTypes = ['lost', 'damaged', 'delayed', 'claim']
 const claimStatuses = ['submitted', 'reviewing', 'approved', 'rejected', 'paid']
+
+function shipmentSelectLabel(shipment) {
+  if (!shipment) return '-'
+  const no = shipment.shipment_no || String(shipment.id || '').slice(0, 8)
+  const status = humanizeStatus(shipment.status || '-')
+  const receiver = shipment.receiver_name || shipment.receiver_phone || shipment.receiver_phone_e164 || '-'
+  return `${no} | ${status} | ${receiver}`
+}
 
 export default function IncidentsPage() {
   const { token, dashboardRole } = useAuth()
@@ -28,6 +38,7 @@ export default function IncidentsPage() {
   const [statuses, setStatuses] = useState([])
   const [incidents, setIncidents] = useState([])
   const [claims, setClaims] = useState([])
+  const [shipments, setShipments] = useState([])
   const [selectedIncidentId, setSelectedIncidentId] = useState('')
   const [incidentUpdates, setIncidentUpdates] = useState([])
   const [claimStats, setClaimStats] = useState(null)
@@ -64,20 +75,37 @@ export default function IncidentsPage() {
       .slice(0, 5)
   }, [claims])
 
+  const shipmentById = useMemo(() => {
+    const map = {}
+    for (const shipment of shipments) {
+      if (shipment?.id) map[shipment.id] = shipment
+    }
+    return map
+  }, [shipments])
+
+  const shipmentOptions = useMemo(
+    () => shipments.map((shipment) => ({ id: shipment.id, label: shipmentSelectLabel(shipment) })),
+    [shipments],
+  )
+
   async function loadAll() {
     if (!token) return
-    const [statusData, incidentData, claimData, statsData, financeData] = await Promise.all([
+    const [statusData, incidentData, claimData, statsData, financeData, shipmentData] = await Promise.all([
       listIncidentStatuses(token),
       listIncidents(token, filters),
       listClaims(token),
       getClaimsOpsStats(token, { staleHours: 24 }),
       getClaimsFinanceReport(token, { months: 6 }),
+      isOpsRole
+        ? listShipments(token, { limit: 300, sort: 'created_at_desc' })
+        : listMyShipments(token, { limit: 300, sort: 'created_at_desc' }),
     ])
     setStatuses(statusData || [])
     setIncidents(incidentData || [])
     setClaims(claimData || [])
     setClaimStats(statsData || null)
     setClaimFinance(financeData || null)
+    setShipments(Array.isArray(shipmentData) ? shipmentData : [])
     if (!selectedIncidentId && Array.isArray(incidentData) && incidentData.length > 0) {
       setSelectedIncidentId(incidentData[0].id)
     }
@@ -118,7 +146,7 @@ export default function IncidentsPage() {
     try {
       await createIncident(token, incidentForm)
       setMessage('Incident cree')
-      setIncidentForm({ shipment_id: '', incident_type: 'lost', description: '' })
+      setIncidentForm((s) => ({ ...s, description: '', incident_type: 'lost' }))
       await loadAll()
     } catch (err) {
       setError(err.message)
@@ -268,12 +296,19 @@ export default function IncidentsPage() {
           <h3>Declarer incident</h3>
           <form className="form" onSubmit={onCreateIncident}>
             <label>
-              Shipment ID
-              <input
+              Colis
+              <select
                 value={incidentForm.shipment_id}
                 onChange={(e) => setIncidentForm((s) => ({ ...s, shipment_id: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Type incident
@@ -305,19 +340,42 @@ export default function IncidentsPage() {
           <form className="form" onSubmit={onCreateClaim}>
             <label>
               Incident ID
-              <input
+              <select
                 value={claimForm.incident_id}
-                onChange={(e) => setClaimForm((s) => ({ ...s, incident_id: e.target.value }))}
+                onChange={(e) => {
+                  const incidentId = e.target.value
+                  const selected = incidents.find((row) => row.id === incidentId)
+                  setClaimForm((s) => ({
+                    ...s,
+                    incident_id: incidentId,
+                    shipment_id: selected?.shipment_id || s.shipment_id,
+                  }))
+                }}
                 required
-              />
+              >
+                <option value="">Selectionner un incident</option>
+                {incidents.map((incident) => (
+                  <option key={incident.id} value={incident.id}>
+                    {humanizeCode(incident.incident_type)} | {humanizeStatus(incident.status)} |{' '}
+                    {shipmentById[incident.shipment_id]?.shipment_no || incident.shipment_id}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
-              Shipment ID
-              <input
+              Colis
+              <select
                 value={claimForm.shipment_id}
                 onChange={(e) => setClaimForm((s) => ({ ...s, shipment_id: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selectionner un colis</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Type claim
@@ -368,11 +426,18 @@ export default function IncidentsPage() {
           <h3>Pilotage incidents</h3>
           <form className="form" onSubmit={onApplyFilters}>
             <label>
-              Shipment ID
-              <input
+              Colis
+              <select
                 value={filters.shipment_id}
                 onChange={(e) => setFilters((s) => ({ ...s, shipment_id: e.target.value }))}
-              />
+              >
+                <option value="">Tous</option>
+                {shipmentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Statut
@@ -411,7 +476,7 @@ export default function IncidentsPage() {
                 <p>
                   <strong>{humanizeCode(incident.incident_type)}</strong> | statut: {humanizeStatus(incident.status)}
                 </p>
-                <p>shipment: {incident.shipment_id}</p>
+                <p>shipment: {shipmentById[incident.shipment_id]?.shipment_no || incident.shipment_id}</p>
                 <p>{incident.description}</p>
                 <button type="button" onClick={() => setSelectedIncidentId(incident.id)}>
                   Ouvrir dossier
@@ -511,11 +576,19 @@ export default function IncidentsPage() {
           <form className="form" onSubmit={onUpdateClaimStatus}>
             <label>
               Claim ID
-              <input
+              <select
                 value={claimUpdateForm.claim_id}
                 onChange={(e) => setClaimUpdateForm((s) => ({ ...s, claim_id: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selectionner une reclamation</option>
+                {claims.map((claim) => (
+                  <option key={claim.id} value={claim.id}>
+                    {humanizeStatus(claim.status)} | {claim.amount_requested ?? claim.amount} |{' '}
+                    {shipmentById[claim.shipment_id]?.shipment_no || claim.shipment_id}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Statut
