@@ -33,6 +33,11 @@ const defaultAutoAssignForm = {
   vehicleCapacity: '',
 }
 
+const defaultGroupingAutoForm = {
+  maxGroups: 3,
+  maxShipments: 20,
+}
+
 function shortId(value) {
   if (!value) return '-'
   const text = String(value)
@@ -71,6 +76,8 @@ export default function TransportPage() {
   const [priorityQueue, setPriorityQueue] = useState(null)
   const [autoAssignForm, setAutoAssignForm] = useState(defaultAutoAssignForm)
   const [autoAssignResult, setAutoAssignResult] = useState(null)
+  const [groupingAutoForm, setGroupingAutoForm] = useState(defaultGroupingAutoForm)
+  const [groupingAutoResult, setGroupingAutoResult] = useState(null)
   const [relayNameById, setRelayNameById] = useState({})
   const [routes, setRoutes] = useState([])
   const [vehicles, setVehicles] = useState([])
@@ -303,6 +310,52 @@ export default function TransportPage() {
       await loadManifest(selectedTripId)
       await loadGrouping()
       await loadPriorityQueue()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function onAutoApplyGrouping() {
+    setError('')
+    setMessage('')
+    setGroupingAutoResult(null)
+    if (!selectedTripId) return
+    const suggestions = Array.isArray(grouping?.suggestions) ? grouping.suggestions : []
+    if (suggestions.length === 0) {
+      setMessage('Aucune suggestion disponible')
+      return
+    }
+
+    const maxGroups = Math.max(1, Number(groupingAutoForm.maxGroups || 1))
+    const maxShipments = Math.max(1, Number(groupingAutoForm.maxShipments || 1))
+    let groupsApplied = 0
+    let added = 0
+    let skipped = 0
+
+    try {
+      for (const suggestion of suggestions) {
+        if (groupsApplied >= maxGroups || added >= maxShipments) break
+        groupsApplied += 1
+        for (const item of suggestion.shipments || []) {
+          if (added >= maxShipments) break
+          try {
+            await addShipmentToManifest(token, selectedTripId, item.shipment_id)
+            added += 1
+          } catch {
+            skipped += 1
+          }
+        }
+      }
+
+      const result = { groups_applied: groupsApplied, added_shipments: added, skipped_shipments: skipped }
+      setGroupingAutoResult(result)
+      setMessage(
+        `Auto regroupement: ${result.added_shipments} colis ajoutes sur ${result.groups_applied} groupes (ignores: ${result.skipped_shipments})`,
+      )
+      await loadManifest(selectedTripId)
+      await loadGrouping()
+      await loadPriorityQueue()
+      await loadShipmentsCatalog()
     } catch (err) {
       setError(err.message)
     }
@@ -542,12 +595,47 @@ export default function TransportPage() {
           Candidats: <strong>{grouping?.total_candidates ?? '-'}</strong> | Groupes:{' '}
           <strong>{grouping?.total_groups ?? '-'}</strong> | Taille lot: <strong>{grouping?.max_group_size ?? '-'}</strong>
         </p>
+        <div className="ops-actions" style={{ marginTop: 10 }}>
+          <label>
+            Max groupes
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={groupingAutoForm.maxGroups}
+              onChange={(e) =>
+                setGroupingAutoForm((s) => ({ ...s, maxGroups: Number(e.target.value || 1) }))
+              }
+            />
+          </label>
+          <label>
+            Max colis
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={groupingAutoForm.maxShipments}
+              onChange={(e) =>
+                setGroupingAutoForm((s) => ({ ...s, maxShipments: Number(e.target.value || 1) }))
+              }
+            />
+          </label>
+          <button type="button" disabled={!selectedTripId} onClick={onAutoApplyGrouping}>
+            Auto-appliquer regroupements
+          </button>
+        </div>
+        {groupingAutoResult ? (
+          <p style={{ marginTop: 8 }}>
+            Appliques: {groupingAutoResult.groups_applied} groupes | Ajoutes:{' '}
+            {groupingAutoResult.added_shipments} colis | Ignores: {groupingAutoResult.skipped_shipments}
+          </p>
+        ) : null}
         <div className="relay-list">
           {!grouping || grouping.suggestions.length === 0 ? <p>Aucun regroupement propose</p> : null}
-          {grouping?.suggestions?.slice(0, 20).map((suggestion) => (
+          {grouping?.suggestions?.slice(0, 20).map((suggestion, index) => (
             <div key={suggestion.key} className="relay-item">
               <p>
-                <strong>{suggestion.key}</strong> | count: {suggestion.candidate_count}
+                <strong>Groupe {index + 1}</strong> | count: {suggestion.candidate_count}
               </p>
               <p>
                 origin: {relayDisplayName(suggestion.origin, relayNameById)} | destination:{' '}
