@@ -26,6 +26,34 @@ function severityBadge(severity) {
   return 'info'
 }
 
+function severityIcon(severity) {
+  const value = String(severity || '').toLowerCase()
+  if (value.includes('critical') || value.includes('high')) return '⛔'
+  if (value.includes('warning') || value.includes('medium')) return '⚠️'
+  return 'ℹ️'
+}
+
+function parseDelayDetails(details) {
+  const text = String(details || '')
+  const match = text.match(/Colis\s+([A-Za-z0-9-]+)\s+bloqu[eé]\s+en\s+statut\s+([a-z_]+)/i)
+  if (!match) {
+    return { shipmentNo: '-', blockedStatus: '-', text }
+  }
+  return {
+    shipmentNo: match[1] || '-',
+    blockedStatus: match[2] || '-',
+    text,
+  }
+}
+
+function financeIcon(point) {
+  const ratio = Number(point?.loss_ratio_pct || 0)
+  const margin = Number(point?.margin || 0)
+  if (ratio >= 70 || margin < 0) return '🔴'
+  if (ratio >= 40) return '🟠'
+  return '🟢'
+}
+
 function getS1Health(kpis) {
   const onTime = Number(kpis?.on_time_rate ?? NaN)
   const incident = Number(kpis?.incident_rate ?? NaN)
@@ -370,37 +398,77 @@ export default function BackofficePage() {
       <section className="page-grid two-cols">
         <article className="panel">
           <h3>Alertes operationnelles</h3>
-          <div className="relay-list list-scroll">
-            {alerts.length === 0 ? <p>Aucune alerte</p> : null}
-            {alerts.map((alert, idx) => (
-              <div key={`${alert.code}-${idx}`} className="relay-item">
-                <p>
-                  <span className={`badge ${severityBadge(alert.severity)}`}>{alert.severity}</span>
-                </p>
-                <p>
-                  <strong>{alert.title}</strong>
-                </p>
-                <p>{alert.details}</p>
-              </div>
-            ))}
+          <div className="premium-table-wrap list-scroll">
+            {alerts.length === 0 ? (
+              <p>Aucune alerte</p>
+            ) : (
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Signal</th>
+                    <th>Niveau</th>
+                    <th>Alerte</th>
+                    <th>Colis</th>
+                    <th>Statut bloque</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alerts.map((alert, idx) => {
+                    const parsed = parseDelayDetails(alert.details)
+                    return (
+                      <tr key={`${alert.code}-${idx}`}>
+                        <td>{severityIcon(alert.severity)}</td>
+                        <td>
+                          <span className={`badge ${severityBadge(alert.severity)}`}>{alert.severity || '-'}</span>
+                        </td>
+                        <td>{alert.title || '-'}</td>
+                        <td>
+                          <strong>{parsed.shipmentNo}</strong>
+                        </td>
+                        <td>{parsed.blockedStatus !== '-' ? parsed.blockedStatus : '-'}</td>
+                        <td>{parsed.text || '-'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </article>
 
         <article className="panel">
           <h3>Finance assurance (6 mois)</h3>
-          <div className="relay-list list-scroll">
+          <div className="premium-table-wrap list-scroll">
             {Array.isArray(claimsFinance?.points) && claimsFinance.points.length > 0 ? (
-              claimsFinance.points.map((point) => (
-                <div key={point.month} className="relay-item">
-                  <p>
-                    <strong>{point.month}</strong>
-                  </p>
-                  <p>primes {point.premiums_collected} | paid {point.claims_paid}</p>
-                  <p>
-                    margin {point.margin} | loss ratio {point.loss_ratio_pct}% | approved {point.claims_approved}
-                  </p>
-                </div>
-              ))
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Trend</th>
+                    <th>Mois</th>
+                    <th>Primes</th>
+                    <th>Paid</th>
+                    <th>Margin</th>
+                    <th>Loss ratio</th>
+                    <th>Approved</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claimsFinance.points.map((point) => (
+                    <tr key={point.month}>
+                      <td>{financeIcon(point)}</td>
+                      <td>
+                        <strong>{point.month}</strong>
+                      </td>
+                      <td>{point.premiums_collected}</td>
+                      <td>{point.claims_paid}</td>
+                      <td>{point.margin}</td>
+                      <td>{point.loss_ratio_pct}%</td>
+                      <td>{point.claims_approved}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <p>Aucune donnee finance.</p>
             )}
