@@ -464,21 +464,43 @@ export default function TransportPage() {
               Ajouter au manifest
             </button>
           </form>
-          <div className="relay-list">
-            {!manifestView || manifestView.shipments.length === 0 ? <p>Aucun colis</p> : null}
-            {manifestView?.shipments.map((shipment) => (
-              <div key={shipment.id} className="relay-item">
-                <p>
-                  <strong>{shipment.shipment_no}</strong> ({shipment.id})
-                </p>
-                <p>
-                  statut: {humanizeStatus(shipment.status)} | destinataire: {shipment.receiver_name || '-'}
-                </p>
-                <button type="button" onClick={() => onRemoveShipment(shipment.id)}>
-                  Retirer
-                </button>
-              </div>
-            ))}
+          <div className="premium-table-wrap">
+            {!manifestView || manifestView.shipments.length === 0 ? (
+              <p>Aucun colis</p>
+            ) : (
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Colis</th>
+                    <th>Statut</th>
+                    <th>Destinataire</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {manifestView.shipments.map((shipment) => (
+                    <tr key={shipment.id}>
+                      <td>
+                        <strong>{shipment.shipment_no || '-'}</strong>
+                        <br />
+                        <span className="mono">{String(shipment.id).slice(0, 8).toUpperCase()}</span>
+                      </td>
+                      <td>
+                        <span className="badge info">{humanizeStatus(shipment.status)}</span>
+                      </td>
+                      <td>{shipment.receiver_name || shipment.receiver_phone || '-'}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button type="button" onClick={() => onRemoveShipment(shipment.id)}>
+                            Retirer
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </article>
 
