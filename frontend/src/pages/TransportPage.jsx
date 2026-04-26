@@ -394,27 +394,46 @@ export default function TransportPage() {
 
         <article className="panel">
           <h3>Liste trips</h3>
-          <div className="relay-list">
-            {trips.length === 0 ? <p>Aucun trip</p> : null}
-            {trips.map((trip) => (
-              <div key={trip.id} className="relay-item">
-                <p>
-                  <strong>{tripDisplayLabel(trip)}</strong>
-                </p>
-                <p>
-                  status: {humanizeStatus(trip.status)} | route: {routeLabel(trip.route_id)} | vehicle:{' '}
-                  {vehicleLabel(trip.vehicle_id)}
-                </p>
-                <div className="ops-actions">
-                  <button type="button" onClick={() => setSelectedTripId(trip.id)}>
-                    Selectionner
-                  </button>
-                  <button type="button" className="button-secondary" onClick={() => onEditTrip(trip)}>
-                    Editer
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="premium-table-wrap">
+            {trips.length === 0 ? (
+              <p>Aucun trip</p>
+            ) : (
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Trip</th>
+                    <th>Statut</th>
+                    <th>Route</th>
+                    <th>Vehicule</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trips.map((trip) => (
+                    <tr key={trip.id}>
+                      <td>
+                        <strong>{tripDisplayLabel(trip)}</strong>
+                      </td>
+                      <td>
+                        <span className="badge info">{humanizeStatus(trip.status)}</span>
+                      </td>
+                      <td>{routeLabel(trip.route_id)}</td>
+                      <td>{vehicleLabel(trip.vehicle_id)}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button type="button" onClick={() => setSelectedTripId(trip.id)}>
+                            Selectionner
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => onEditTrip(trip)}>
+                            Editer
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </article>
       </section>
