@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const navByRole = {
@@ -14,6 +14,7 @@ const navByRole = {
     { to: '/dashboard', label: 'Espace agent', icon: '🏠' },
     { to: '/tracking', label: 'Operations terrain', icon: '🧭' },
     { to: '/transport', label: 'Trips & scans', icon: '🚚' },
+    { to: '/transport#grouping-suggestions', label: 'Propositions systeme', icon: '🧩' },
     { to: '/shipments', label: 'Creation colis', icon: '📦' },
     { to: '/shipment-schedules', label: 'Envois programmes', icon: '🗓️' },
     { to: '/relays', label: 'Relais', icon: '🏪' },
@@ -26,6 +27,7 @@ const navByRole = {
     { to: '/shipment-schedules', label: 'Envois programmes', icon: '🗓️' },
     { to: '/tracking', label: 'Tracking live', icon: '🛰️' },
     { to: '/transport', label: 'Transport', icon: '🚚' },
+    { to: '/transport#grouping-suggestions', label: 'Propositions systeme', icon: '🧩' },
     { to: '/relays', label: 'Reseau relais', icon: '🏪' },
     { to: '/payments', label: 'Paiements', icon: '💳' },
     { to: '/incidents', label: 'Incidents & claims', icon: '⚠️' },
@@ -42,6 +44,7 @@ const roleLabels = {
 export default function Sidebar() {
   const { logout, dashboardRole, userProfile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const items = navByRole[dashboardRole] || navByRole.client
   const displayName = [userProfile?.first_name, userProfile?.last_name].filter(Boolean).join(' ').trim()
   const phone = userProfile?.phone_e164 || ''
@@ -74,7 +77,15 @@ export default function Sidebar() {
               key={item.to}
               to={item.to}
               end={item.to === '/dashboard'}
-              className={({ isActive }) => (isActive ? 'sidebar-link active' : 'sidebar-link')}
+              className={({ isActive }) => {
+                const [path, hash] = item.to.split('#')
+                if (hash) {
+                  const activeHash = (location.hash || '').replace(/^#/, '')
+                  const isHashActive = location.pathname === path && activeHash === hash
+                  return isHashActive ? 'sidebar-link active' : 'sidebar-link'
+                }
+                return isActive ? 'sidebar-link active' : 'sidebar-link'
+              }}
             >
               <span className="sidebar-link-inner">
                 <span className="sidebar-link-icon" aria-hidden="true">
