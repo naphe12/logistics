@@ -68,6 +68,33 @@ class ApiClient {
     return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  Future<List<Map<String, dynamic>>> listShipments({int limit = 100}) async {
+    final response = await _dio.get(
+      "/shipments",
+      queryParameters: {"limit": limit, "sort": "created_at_desc"},
+    );
+    final rows = (response.data as List<dynamic>? ?? const []);
+    return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> getShipmentTrackingSummary(
+    String shipmentId,
+  ) async {
+    final response = await _dio.get("/shipments/$shipmentId/tracking-summary");
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> getShipmentEta(String shipmentId) async {
+    final response = await _dio.get("/shipments/$shipmentId/eta");
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getShipmentTimeline(String shipmentId) async {
+    final response = await _dio.get("/shipments/$shipmentId/timeline");
+    final rows = (response.data as List<dynamic>? ?? const []);
+    return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   Future<Map<String, dynamic>> syncPullShipments({
     String? sinceIso,
     int limit = 200,
@@ -199,8 +226,50 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
-  Future<List<Map<String, dynamic>>> listRelays() async {
-    final response = await _dio.get("/relays");
+  Future<List<Map<String, dynamic>>> listRelays({
+    String? q,
+    String? provinceId,
+    String? communeId,
+    String? operationalStatus,
+  }) async {
+    final params = <String, dynamic>{};
+    if (q != null && q.trim().isNotEmpty) params["q"] = q.trim();
+    if (provinceId != null && provinceId.trim().isNotEmpty) {
+      params["province_id"] = provinceId.trim();
+    }
+    if (communeId != null && communeId.trim().isNotEmpty) {
+      params["commune_id"] = communeId.trim();
+    }
+    if (operationalStatus != null && operationalStatus.trim().isNotEmpty) {
+      params["operational_status"] = operationalStatus.trim();
+    }
+    final response = await _dio.get("/relays", queryParameters: params);
+    final rows = (response.data as List<dynamic>? ?? const []);
+    return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listProvinces({
+    String? q,
+    int limit = 200,
+  }) async {
+    final params = <String, dynamic>{"limit": limit};
+    if (q != null && q.trim().isNotEmpty) params["q"] = q.trim();
+    final response = await _dio.get("/geo/provinces", queryParameters: params);
+    final rows = (response.data as List<dynamic>? ?? const []);
+    return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listCommunes({
+    String? q,
+    String? provinceId,
+    int limit = 500,
+  }) async {
+    final params = <String, dynamic>{"limit": limit};
+    if (q != null && q.trim().isNotEmpty) params["q"] = q.trim();
+    if (provinceId != null && provinceId.trim().isNotEmpty) {
+      params["province_id"] = provinceId.trim();
+    }
+    final response = await _dio.get("/geo/communes", queryParameters: params);
     final rows = (response.data as List<dynamic>? ?? const []);
     return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
@@ -246,6 +315,61 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getRelayCapacity(String relayId) async {
     final response = await _dio.get("/relays/$relayId/capacity");
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> createRelayManagerApplication({
+    String? relayId,
+    required String managerName,
+    required String managerPhone,
+    String? managerEmail,
+    String? notes,
+  }) async {
+    final response = await _dio.post(
+      "/relays/manager-applications",
+      data: {
+        "relay_id": (relayId == null || relayId.isEmpty) ? null : relayId,
+        "manager_name": managerName,
+        "manager_phone": managerPhone,
+        "manager_email": (managerEmail == null || managerEmail.isEmpty)
+            ? null
+            : managerEmail,
+        "notes": (notes == null || notes.isEmpty) ? null : notes,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> listRelayManagerApplications({
+    String? status,
+    String? relayId,
+    int limit = 200,
+  }) async {
+    final params = <String, dynamic>{"limit": limit};
+    if (status != null && status.trim().isNotEmpty) params["status"] = status;
+    if (relayId != null && relayId.trim().isNotEmpty) params["relay_id"] = relayId;
+    final response = await _dio.get(
+      "/relays/manager-applications",
+      queryParameters: params,
+    );
+    final rows = (response.data as List<dynamic>? ?? const []);
+    return rows.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> reviewRelayManagerApplication({
+    required String applicationId,
+    required String status,
+    bool trainingCompleted = false,
+    String? notes,
+  }) async {
+    final response = await _dio.patch(
+      "/relays/manager-applications/$applicationId",
+      data: {
+        "status": status,
+        "training_completed": trainingCompleted,
+        "notes": (notes == null || notes.isEmpty) ? null : notes,
+      },
+    );
     return Map<String, dynamic>.from(response.data as Map);
   }
 
@@ -558,5 +682,29 @@ class ApiClient {
       options: Options(method: method),
     );
     return response.data;
+  }
+
+  Future<Map<String, dynamic>> uploadShipmentDeliveryProof({
+    required String shipmentId,
+    required String receiverName,
+    required String signature,
+    String? photoPath,
+    double? geoLat,
+    double? geoLng,
+  }) async {
+    final form = FormData.fromMap({
+      "receiver_name": receiverName,
+      "signature": signature,
+      "geo_lat": geoLat,
+      "geo_lng": geoLng,
+      if (photoPath != null && photoPath.isNotEmpty)
+        "photo": await MultipartFile.fromFile(photoPath),
+    });
+    final response = await _dio.post(
+      "/shipments/$shipmentId/delivery-proof/upload",
+      data: form,
+      options: Options(headers: {"Content-Type": "multipart/form-data"}),
+    );
+    return Map<String, dynamic>.from(response.data as Map);
   }
 }

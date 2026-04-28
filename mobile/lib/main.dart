@@ -1981,6 +1981,73 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _quickActionTile({
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+    String? subtitle,
+    Color? color,
+  }) {
+    final accent = color ?? AppTheme.brandPrimary;
+    return SizedBox(
+      width: 160,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: 0.18)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: accent),
+              const SizedBox(height: 8),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black.withValues(alpha: 0.68),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuGroupTile({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      child: ExpansionTile(
+        leading: Icon(icon, color: AppTheme.brandSecondary),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [child],
+      ),
+    );
+  }
+
   Widget _buildOfflineQueueCard() {
     return _sectionCard(
       title: "Offline Queue",
@@ -2020,7 +2087,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     OutlinedButton(
                       onPressed: () => _retryQueuedAction(action),
-                      child: const Text("Retry"),
+                      child: const Text("Relancer"),
                     ),
                     OutlinedButton(
                       onPressed: () => _deleteQueuedAction(action),
@@ -2036,9 +2103,72 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCustomerTab() {
+    final total = _shipments.length;
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0D3B66), Color(0xFF1F6AA5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Espace Client",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _statusChip(
+                icon: Icons.inventory_2_outlined,
+                label: "Total colis $total",
+                color: Colors.white,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _sectionCard(
+          title: "Actions Rapides",
+          icon: Icons.flash_on_outlined,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickActionTile(
+                title: "Nouvel envoi",
+                subtitle: "Creer colis",
+                icon: Icons.add_box_outlined,
+                onTap: _queueCreateShipment,
+              ),
+              _quickActionTile(
+                title: "Synchroniser",
+                subtitle: "Push + Pull",
+                icon: Icons.sync_outlined,
+                color: AppTheme.brandSecondary,
+                onTap: _syncing ? () {} : () => _syncNow(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _menuGroupTile(
+          title: "Menus",
+          subtitle: "Expedition et suivi local",
+          icon: Icons.grid_view_outlined,
+          child: const Text("Utilise les sections detaillees ci-dessous."),
+        ),
+        const SizedBox(height: 10),
         _sectionCard(
           title: "Creation Colis",
           icon: Icons.inventory_2_outlined,
@@ -2047,7 +2177,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _senderPhoneCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Sender phone",
+                  labelText: "Telephone expediteur",
                   prefixIcon: Icon(Icons.phone_outlined),
                 ),
               ),
@@ -2055,7 +2185,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _receiverNameCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Receiver name",
+                  labelText: "Nom destinataire",
                   prefixIcon: Icon(Icons.person_outline),
                 ),
               ),
@@ -2063,7 +2193,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _receiverPhoneCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Receiver phone",
+                  labelText: "Telephone destinataire",
                   prefixIcon: Icon(Icons.call_outlined),
                 ),
               ),
@@ -2107,6 +2237,62 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF2F4858), Color(0xFF33658A)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Espace Agent Terrain",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _sectionCard(
+          title: "Actions Rapides",
+          icon: Icons.flash_on_outlined,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickActionTile(
+                title: "Valider",
+                subtitle: "Code retrait",
+                icon: Icons.rule,
+                onTap: _queuePickupValidate,
+              ),
+              _quickActionTile(
+                title: "Confirmer",
+                subtitle: "Remise colis",
+                icon: Icons.verified,
+                color: AppTheme.brandSecondary,
+                onTap: _queuePickupConfirm,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _menuGroupTile(
+          title: "Menus",
+          subtitle: "Retrait, conflits, queue offline",
+          icon: Icons.grid_view_outlined,
+          child: const Text("Utilise les sections detaillees ci-dessous."),
+        ),
+        const SizedBox(height: 10),
         _sectionCard(
           title: "Validation Retrait",
           icon: Icons.qr_code_scanner_outlined,
@@ -2115,7 +2301,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _pickupShipmentIdCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Shipment ID",
+                  labelText: "ID colis",
                   prefixIcon: Icon(Icons.confirmation_number_outlined),
                 ),
               ),
@@ -2123,7 +2309,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _pickupCodeCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Pickup code",
+                  labelText: "Code de retrait",
                   prefixIcon: Icon(Icons.pin_outlined),
                 ),
               ),
@@ -2143,12 +2329,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   FilledButton.icon(
                     onPressed: _queuePickupValidate,
                     icon: const Icon(Icons.rule),
-                    label: const Text("Queue validate"),
+                    label: const Text("Mettre en file: validation"),
                   ),
                   FilledButton.icon(
                     onPressed: _queuePickupConfirm,
                     icon: const Icon(Icons.verified),
-                    label: const Text("Queue confirm"),
+                    label: const Text("Mettre en file: confirmation"),
                   ),
                 ],
               ),
@@ -2157,7 +2343,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 10),
         _sectionCard(
-          title: "Sync Conflicts",
+          title: "Conflits de synchro",
           icon: Icons.warning_amber_rounded,
           child: Column(
             children: [
@@ -2175,7 +2361,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   trailing: FilledButton(
                     onPressed: () => _retryConflictClientWins(conflict),
-                    child: const Text("Retry client_wins"),
+                    child: const Text("Relancer (priorite client)"),
                   ),
                 );
               }),
@@ -2234,6 +2420,176 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1B4332), Color(0xFF2D6A4F)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Espace Admin",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _statusChip(
+                    icon: Icons.inventory_2_outlined,
+                    label: "Colis ${_overview?["shipments_total"] ?? "-"}",
+                    color: Colors.white,
+                  ),
+                  _statusChip(
+                    icon: Icons.warning_amber_rounded,
+                    label: "Incidents ${_overview?["incidents_open"] ?? "-"}",
+                    color: const Color(0xFFFFD166),
+                  ),
+                  _statusChip(
+                    icon: Icons.route_outlined,
+                    label: "Trips ${_overview?["trips_in_progress"] ?? "-"}",
+                    color: const Color(0xFF7AE582),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _sectionCard(
+          title: "Actions Rapides",
+          icon: Icons.flash_on_outlined,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickActionTile(
+                title: "Ops",
+                subtitle: "Dashboard",
+                icon: Icons.monitor_heart_outlined,
+                onTap: () async {
+                  await _loadBackofficeOverview();
+                  await _loadOpsMonitoringData();
+                },
+              ),
+              _quickActionTile(
+                title: "Relais",
+                subtitle: "Points",
+                icon: Icons.store_mall_directory_outlined,
+                color: AppTheme.brandSecondary,
+                onTap: _loadRelayAdminData,
+              ),
+              _quickActionTile(
+                title: "Paiements",
+                subtitle: "Transactions",
+                icon: Icons.account_balance_wallet_outlined,
+                color: Colors.green,
+                onTap: _loadPaymentAdminData,
+              ),
+              _quickActionTile(
+                title: "Incidents",
+                subtitle: "Support",
+                icon: Icons.health_and_safety_outlined,
+                color: Colors.redAccent,
+                onTap: _loadIncidentClaimAdminData,
+              ),
+              _quickActionTile(
+                title: "Transport",
+                subtitle: "Trips",
+                icon: Icons.alt_route_outlined,
+                color: Colors.orange,
+                onTap: _loadTransportData,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _sectionCard(
+          title: "Menus Groupes",
+          icon: Icons.grid_view_outlined,
+          child: Column(
+            children: [
+              _menuGroupTile(
+                title: "Ops",
+                subtitle: "Monitoring et alertes",
+                icon: Icons.monitor_heart_outlined,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _runAutoDetectIncidents,
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text("Auto-detect incidents"),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _runNotifyCriticalAlerts,
+                      icon: const Icon(Icons.sms_outlined),
+                      label: const Text("Notify critical SMS"),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _loadServerSyncConflictIncidents,
+                      icon: const Icon(Icons.rule_folder_outlined),
+                      label: const Text("Sync conflicts"),
+                    ),
+                  ],
+                ),
+              ),
+              _menuGroupTile(
+                title: "Relais",
+                subtitle: "Points et onboarding",
+                icon: Icons.store_mall_directory_outlined,
+                child: OutlinedButton.icon(
+                  onPressed: _loadRelayAdminData,
+                  icon: const Icon(Icons.sync_outlined),
+                  label: const Text("Charger relais"),
+                ),
+              ),
+              _menuGroupTile(
+                title: "Paiements",
+                subtitle: "Paiements et commissions",
+                icon: Icons.account_balance_wallet_outlined,
+                child: OutlinedButton.icon(
+                  onPressed: _loadPaymentAdminData,
+                  icon: const Icon(Icons.sync_outlined),
+                  label: const Text("Charger paiements"),
+                ),
+              ),
+              _menuGroupTile(
+                title: "Incidents",
+                subtitle: "Incidents et claims",
+                icon: Icons.health_and_safety_outlined,
+                child: OutlinedButton.icon(
+                  onPressed: _loadIncidentClaimAdminData,
+                  icon: const Icon(Icons.sync_outlined),
+                  label: const Text("Charger incidents/claims"),
+                ),
+              ),
+              _menuGroupTile(
+                title: "Transport",
+                subtitle: "Trips et manifest",
+                icon: Icons.alt_route_outlined,
+                child: OutlinedButton.icon(
+                  onPressed: _loadTransportData,
+                  icon: const Icon(Icons.sync_outlined),
+                  label: const Text("Charger trips"),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         _sectionCard(
           title: "Ops Dashboard",
           icon: Icons.monitor_heart_outlined,
@@ -2396,7 +2752,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     .map(
                       (status) => DropdownMenuItem<String>(
                         value: status,
-                        child: Text("Status: $status"),
+                        child: Text("Statut: $status"),
                       ),
                     )
                     .toList(),
@@ -2491,7 +2847,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _paymentProviderCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Provider",
+                  labelText: "Operateur",
                   prefixIcon: Icon(Icons.account_tree_outlined),
                 ),
               ),
@@ -2766,7 +3122,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
-                  labelText: "Amount",
+                  labelText: "Montant",
                   prefixIcon: Icon(Icons.payments_outlined),
                 ),
               ),
@@ -2775,7 +3131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _claimReasonCtrl,
                 maxLines: 2,
                 decoration: const InputDecoration(
-                  labelText: "Reason",
+                  labelText: "Motif",
                   prefixIcon: Icon(Icons.notes_outlined),
                 ),
               ),
@@ -2805,7 +3161,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     .map(
                       (v) => DropdownMenuItem<String>(
                         value: v,
-                        child: Text("Status: $v"),
+                        child: Text("Statut: $v"),
                       ),
                     )
                     .toList(),
@@ -3376,7 +3732,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             onPressed: widget.onLogout,
             icon: const Icon(Icons.logout),
-            tooltip: "Logout",
+            tooltip: "Deconnexion",
           ),
         ],
       ),
@@ -3396,19 +3752,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: _online
                       ? Icons.cloud_done_outlined
                       : Icons.cloud_off_outlined,
-                  label: _online ? "Online" : "Offline",
+                  label: _online ? "En ligne" : "Hors ligne",
                   color: _online ? AppTheme.brandPrimary : Colors.red,
                 ),
                 const SizedBox(width: 8),
                 _statusChip(
                   icon: Icons.queue_outlined,
-                  label: "Queue ${_queueStats["total"]}",
+                  label: "File ${_queueStats["total"]}",
                   color: AppTheme.brandSecondary,
                 ),
                 const SizedBox(width: 8),
                 _statusChip(
                   icon: Icons.error_outline,
-                  label: "Fail ${_queueStats["failed"]}",
+                  label: "Echecs ${_queueStats["failed"]}",
                   color: Colors.orange,
                 ),
               ],
