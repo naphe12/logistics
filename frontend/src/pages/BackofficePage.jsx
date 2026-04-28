@@ -28,9 +28,9 @@ function severityBadge(severity) {
 
 function severityIcon(severity) {
   const value = String(severity || '').toLowerCase()
-  if (value.includes('critical') || value.includes('high')) return '⛔'
-  if (value.includes('warning') || value.includes('medium')) return '⚠️'
-  return 'ℹ️'
+  if (value.includes('critical') || value.includes('high')) return 'HIGH'
+  if (value.includes('warning') || value.includes('medium')) return 'WARN'
+  return 'INFO'
 }
 
 function parseDelayDetails(details) {
@@ -49,9 +49,9 @@ function parseDelayDetails(details) {
 function financeIcon(point) {
   const ratio = Number(point?.loss_ratio_pct || 0)
   const margin = Number(point?.margin || 0)
-  if (ratio >= 70 || margin < 0) return '🔴'
-  if (ratio >= 40) return '🟠'
-  return '🟢'
+  if (ratio >= 70 || margin < 0) return 'risk'
+  if (ratio >= 40) return 'watch'
+  return 'ok'
 }
 
 function getS1Health(kpis) {
@@ -135,6 +135,18 @@ export default function BackofficePage() {
   function pct(value) {
     if (typeof value !== 'number' || Number.isNaN(value)) return '-'
     return `${value.toFixed(2)}%`
+  }
+
+  function fmtMoney(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return '-'
+    return num.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  function fmtRatio(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return '-'
+    return `${num.toFixed(2)}%`
   }
   const s1Health = getS1Health(s1Kpis)
 
@@ -460,10 +472,10 @@ export default function BackofficePage() {
                       <td>
                         <strong>{point.month}</strong>
                       </td>
-                      <td>{point.premiums_collected}</td>
-                      <td>{point.claims_paid}</td>
-                      <td>{point.margin}</td>
-                      <td>{point.loss_ratio_pct}%</td>
+                      <td>{fmtMoney(point.premiums_collected)}</td>
+                      <td>{fmtMoney(point.claims_paid)}</td>
+                      <td>{fmtMoney(point.margin)}</td>
+                      <td>{fmtRatio(point.loss_ratio_pct)}</td>
                       <td>{point.claims_approved}</td>
                     </tr>
                   ))}

@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
-from app.config import CORS_ALLOW_ALL, CORS_ALLOW_ORIGINS, CORS_ALLOW_ORIGIN_REGEX
+from app.config import CORS_ALLOW_ALL, CORS_ALLOW_ORIGINS, CORS_ALLOW_ORIGIN_REGEX, MEDIA_ROOT
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.shipments import router as shipments_router
@@ -60,6 +62,8 @@ app.include_router(sync_router)
 app.include_router(ws_router)
 app.include_router(notifications_router)
 app.include_router(geo_router)
+Path(MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=MEDIA_ROOT), name="media")
 
 
 @app.on_event("startup")

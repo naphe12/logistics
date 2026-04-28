@@ -11,6 +11,7 @@ import {
   listPublicRelays,
   listShipments,
   openShipmentTrackingSocket,
+  uploadShipmentDeliveryProof,
   updateShipmentPickupSlot,
   updateShipmentStatus,
   validatePickupCode,
@@ -41,6 +42,15 @@ function formatDateTime(value) {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return String(value)
   return dt.toLocaleString()
+}
+
+function resolveMediaUrl(path) {
+  if (!path) return ''
+  const value = String(path)
+  if (value.startsWith('http://') || value.startsWith('https://')) return value
+  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+  if (!base) return value
+  return `${base}${value.startsWith('/') ? '' : '/'}${value}`
 }
 
 function prettifyCode(value) {
@@ -111,10 +121,12 @@ export default function TrackingPage() {
     shipment_id: '',
     receiver_name: '',
     signature: '',
+    photo_url: '',
     geo_lat: '',
     geo_lng: '',
   })
   const [proofResult, setProofResult] = useState('')
+  const [proofPhotoFile, setProofPhotoFile] = useState(null)
   const [forecastRelayId, setForecastRelayId] = useState('')
   const [forecastHours, setForecastHours] = useState(24)
   const [pickupForecast, setPickupForecast] = useState([])
@@ -369,13 +381,24 @@ export default function TrackingPage() {
     setError('')
     setProofResult('')
     try {
-      const res = await createShipmentDeliveryProof(token, proofForm.shipment_id.trim(), {
+      const payload = {
         receiver_name: proofForm.receiver_name,
         signature: proofForm.signature,
+        photo_url: proofForm.photo_url || null,
         geo_lat: proofForm.geo_lat === '' ? null : Number(proofForm.geo_lat),
         geo_lng: proofForm.geo_lng === '' ? null : Number(proofForm.geo_lng),
-      })
+      }
+      const res = proofPhotoFile
+        ? await uploadShipmentDeliveryProof(token, proofForm.shipment_id.trim(), {
+            receiver_name: payload.receiver_name,
+            signature: payload.signature,
+            geo_lat: payload.geo_lat,
+            geo_lng: payload.geo_lng,
+            photo_file: proofPhotoFile,
+          })
+        : await createShipmentDeliveryProof(token, proofForm.shipment_id.trim(), payload)
       setProofResult(`Preuve capturee. Statut: ${res.status || 'delivered'}`)
+      setProofPhotoFile(null)
     } catch (err) {
       setError(err.message)
     }
@@ -501,6 +524,7 @@ export default function TrackingPage() {
                 const statusCode = resolveStatusCode(item)
                 const statusLabel = statusCode ? prettifyCode(statusCode) : '-'
                 const relayName = item.relay_id ? relayNameById[item.relay_id] || item.relay_id : '-'
+                const proofPhoto = item?.extra?.photo_url ? resolveMediaUrl(item.extra.photo_url) : ''
                 return (
                   <>
                     <p>
@@ -509,6 +533,20 @@ export default function TrackingPage() {
                     <p>{formatDateTime(item.occurred_at)}</p>
                     <p>status: {statusLabel}</p>
                     <p>relay: {relayName}</p>
+                    {proofPhoto ? (
+                      <p>
+                        <a href={proofPhoto} target="_blank" rel="noreferrer">
+                          Ouvrir photo preuve
+                        </a>
+                      </p>
+                    ) : null}
+                    {proofPhoto ? (
+                      <img
+                        src={proofPhoto}
+                        alt="Preuve de remise"
+                        style={{ width: '100%', maxWidth: 260, borderRadius: 10, border: '1px solid #d5e2ef' }}
+                      />
+                    ) : null}
                   </>
                 )
               })()}
@@ -752,6 +790,22 @@ export default function TrackingPage() {
                   value={proofForm.signature}
                   onChange={(e) => setProofForm((s) => ({ ...s, signature: e.target.value }))}
                   required
+                />
+              </label>
+              <label>
+                Photo preuve (URL)
+                <input
+                  value={proofForm.photo_url}
+                  onChange={(e) => setProofForm((s) => ({ ...s, photo_url: e.target.value }))}
+                  placeholder="https://..."
+                />
+              </label>
+              <label>
+                Photo preuve (fichier)
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => setProofPhotoFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                 />
               </label>
               <label>

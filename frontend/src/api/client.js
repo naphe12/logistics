@@ -313,6 +313,28 @@ export async function createShipmentDeliveryProof(token, shipmentId, payload) {
   })
 }
 
+export async function uploadShipmentDeliveryProof(token, shipmentId, payload) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const form = new FormData()
+  form.set('receiver_name', payload.receiver_name || '')
+  form.set('signature', payload.signature || '')
+  if (payload.geo_lat !== null && payload.geo_lat !== undefined) form.set('geo_lat', String(payload.geo_lat))
+  if (payload.geo_lng !== null && payload.geo_lng !== undefined) form.set('geo_lng', String(payload.geo_lng))
+  if (payload.photo_file) form.set('photo', payload.photo_file)
+
+  const res = await fetch(`${API_BASE_URL}/shipments/${shipmentId}/delivery-proof/upload`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await parseError(res)
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
 export async function getRelayPickupForecast(token, relayId, hours = 24) {
   return request(`/shipments/relays/${relayId}/pickup-forecast?hours=${encodeURIComponent(hours)}`, { token })
 }
@@ -389,12 +411,43 @@ export async function listUsers(token, role) {
   return request(`/auth/users${query}`, { token })
 }
 
-export async function listRelays(token) {
-  return request('/relays', { token })
+export async function listRelays(
+  token,
+  { q = '', provinceId = '', communeId = '', onlyActive = null, operationalStatus = '' } = {},
+) {
+  const qs = new URLSearchParams()
+  if (q) qs.set('q', String(q))
+  if (provinceId) qs.set('province_id', String(provinceId))
+  if (communeId) qs.set('commune_id', String(communeId))
+  if (onlyActive !== null && onlyActive !== undefined) qs.set('only_active', onlyActive ? 'true' : 'false')
+  if (operationalStatus) qs.set('operational_status', String(operationalStatus))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/relays${suffix}`, { token })
 }
 
-export async function listPublicRelays() {
-  return request('/relays/public')
+export async function listPublicRelays({ q = '', provinceId = '', communeId = '', operationalStatus = '' } = {}) {
+  const qs = new URLSearchParams()
+  if (q) qs.set('q', String(q))
+  if (provinceId) qs.set('province_id', String(provinceId))
+  if (communeId) qs.set('commune_id', String(communeId))
+  if (operationalStatus) qs.set('operational_status', String(operationalStatus))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/relays/public${suffix}`)
+}
+
+export async function listProvinces(token, { q = '', limit = 200 } = {}) {
+  const qs = new URLSearchParams()
+  if (q) qs.set('q', String(q))
+  qs.set('limit', String(limit))
+  return request(`/geo/provinces?${qs.toString()}`, { token })
+}
+
+export async function listCommunes(token, { provinceId = '', q = '', limit = 500 } = {}) {
+  const qs = new URLSearchParams()
+  if (provinceId) qs.set('province_id', String(provinceId))
+  if (q) qs.set('q', String(q))
+  qs.set('limit', String(limit))
+  return request(`/geo/communes?${qs.toString()}`, { token })
 }
 
 export async function createRelay(token, payload) {
@@ -451,6 +504,33 @@ export async function assignAgentToRelay(token, relayId, userId) {
 export async function unassignAgentFromRelay(token, relayId, userId) {
   return request(`/relays/${relayId}/agents/${userId}`, {
     method: 'DELETE',
+    token,
+  })
+}
+
+export async function createRelayManagerApplication(token, payload) {
+  return request('/relays/manager-applications', {
+    method: 'POST',
+    body: payload,
+    token,
+  })
+}
+
+export async function listRelayManagerApplications(
+  token,
+  { status = '', relayId = '', limit = 100 } = {},
+) {
+  const qs = new URLSearchParams()
+  if (status) qs.set('status', String(status))
+  if (relayId) qs.set('relay_id', String(relayId))
+  qs.set('limit', String(limit))
+  return request(`/relays/manager-applications?${qs.toString()}`, { token })
+}
+
+export async function reviewRelayManagerApplication(token, applicationId, payload) {
+  return request(`/relays/manager-applications/${applicationId}`, {
+    method: 'PATCH',
+    body: payload,
     token,
   })
 }

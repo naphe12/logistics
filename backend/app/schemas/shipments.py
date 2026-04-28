@@ -392,6 +392,7 @@ class ShipmentRelayTransferRequest(BaseModel):
 class ShipmentDeliveryProofCreateRequest(BaseModel):
     receiver_name: str = Field(min_length=2, max_length=180)
     signature: str = Field(min_length=2, max_length=2000)
+    photo_url: str | None = Field(default=None, max_length=4000)
     geo_lat: float | None = None
     geo_lng: float | None = None
 

@@ -2,7 +2,7 @@ from uuid import UUID
 from typing import Literal
 import csv
 from io import StringIO
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Header, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -92,6 +92,9 @@ from app.services.idempotency_service import (
 )
 from app.services.relay_service import RelayCapacityError, RelayInventoryError, RelayNotFoundError
 from app.dependencies import get_current_user, require_roles
+from app.config import MEDIA_ROOT
+from pathlib import Path
+import uuid
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
@@ -950,8 +953,55 @@ def create_shipment_delivery_proof_endpoint(
             shipment_id,
             receiver_name=payload.receiver_name,
             signature=payload.signature,
+            photo_url=payload.photo_url,
             geo_lat=payload.geo_lat,
             geo_lng=payload.geo_lng,
+        )
+    except ShipmentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{shipment_id}/delivery-proof/upload", response_model=ShipmentOut)
+async def create_shipment_delivery_proof_upload_endpoint(
+    shipment_id: UUID,
+    receiver_name: str = Form(...),
+    signature: str = Form(...),
+    geo_lat: float | None = Form(default=None),
+    geo_lng: float | None = Form(default=None),
+    photo: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+    _user: User = Depends(
+        require_roles(
+            UserTypeEnum.agent,
+            UserTypeEnum.driver,
+            UserTypeEnum.hub,
+            UserTypeEnum.admin,
+        )
+    ),
+):
+    photo_url = None
+    if photo is not None and photo.filename:
+        content = await photo.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Photo too large (max 5MB)")
+        media_dir = Path(MEDIA_ROOT) / "delivery-proofs"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(photo.filename).suffix.lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+            ext = ".jpg"
+        filename = f"{shipment_id}-{uuid.uuid4().hex}{ext}"
+        file_path = media_dir / filename
+        file_path.write_bytes(content)
+        photo_url = f"/media/delivery-proofs/{filename}"
+    try:
+        return capture_delivery_proof(
+            db,
+            shipment_id,
+            receiver_name=receiver_name,
+            signature=signature,
+            photo_url=photo_url,
+            geo_lat=geo_lat,
+            geo_lng=geo_lng,
         )
     except ShipmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
+from datetime import datetime
 
 
 class RelayBase(BaseModel):
@@ -40,6 +41,50 @@ class RelayOut(BaseModel):
     opening_hours: str | None = None
     storage_capacity: int | None = None
     is_active: bool
+    current_present: int | None = None
+    available: int | None = None
+    utilization_ratio: float | None = None
+    operational_status: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    quartier: str | None = None
+    commune_name: str | None = None
+    province_name: str | None = None
+    landmark: str | None = None
+    manager_phone: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class RelayManagerApplicationCreate(BaseModel):
+    relay_id: UUID | None = None
+    manager_name: str = Field(min_length=2, max_length=180)
+    manager_phone: str = Field(min_length=8, max_length=20)
+    manager_email: str | None = Field(default=None, max_length=180)
+    notes: str | None = None
+
+
+class RelayManagerApplicationReview(BaseModel):
+    status: str = Field(pattern="^(pending|validated|rejected|training_in_progress|trained)$")
+    training_completed: bool = False
+    notes: str | None = None
+
+
+class RelayManagerApplicationOut(BaseModel):
+    id: UUID
+    relay_id: UUID | None = None
+    manager_name: str
+    manager_phone: str
+    manager_email: str | None = None
+    notes: str | None = None
+    status: str
+    training_completed: bool
+    created_by_user_id: UUID | None = None
+    reviewed_by_user_id: UUID | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True

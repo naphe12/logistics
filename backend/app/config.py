@@ -136,6 +136,7 @@ CORS_ALLOW_ORIGIN_REGEX = os.getenv(
     r"^https?://.+$",
 )
 APP_VERSION = os.getenv("APP_VERSION", "dev")
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(Path(__file__).resolve().parents[1] / "media"))
 GEO_ACTIVE_PROVINCES = parse_csv_env(
     "GEO_ACTIVE_PROVINCES",
     "Bujumbura,Gitega,Butanyerera,Burunga,Buhumuza",

@@ -1,13 +1,16 @@
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.enums import UserTypeEnum
+from app.models.addresses import Address, Commune, Province
+from app.models.relay_onboarding import RelayManagerApplication
 from app.models.relays import RelayPoint
 from app.models.shipments import RelayInventory, Shipment
 from app.models.users import User
-from app.schemas.relays import RelayCreate, RelayUpdate
+from app.schemas.relays import RelayCreate, RelayManagerApplicationCreate, RelayManagerApplicationReview, RelayUpdate
 from app.services.audit_service import log_action
 
 
@@ -115,6 +118,180 @@ def _assert_not_present_in_other_relay(
 
 def list_relays(db: Session) -> list[RelayPoint]:
     return db.query(RelayPoint).order_by(RelayPoint.name.asc()).all()
+
+
+def list_relays_with_filters(
+    db: Session,
+    *,
+    q: str | None = None,
+    province_id=None,
+    commune_id=None,
+    only_active: bool | None = None,
+    operational_status: str | None = None,
+) -> list[dict]:
+    query = db.query(RelayPoint)
+    if q:
+        text = f"%{q.strip()}%"
+        query = query.filter(
+            RelayPoint.name.ilike(text) | RelayPoint.relay_code.ilike(text) | RelayPoint.type.ilike(text)
+        )
+    if province_id:
+        query = query.filter(RelayPoint.province_id == province_id)
+    if commune_id:
+        query = query.filter(RelayPoint.commune_id == commune_id)
+    if only_active is not None:
+        query = query.filter(RelayPoint.is_active.is_(only_active))
+
+    relays = query.order_by(RelayPoint.name.asc()).all()
+    if not relays:
+        return []
+
+    relay_ids = [row.id for row in relays]
+    address_ids = [row.address_id for row in relays if row.address_id]
+    counts = dict(
+        db.query(RelayInventory.relay_id, func.count(RelayInventory.id))
+        .filter(RelayInventory.relay_id.in_(relay_ids), RelayInventory.present.is_(True))
+        .group_by(RelayInventory.relay_id)
+        .all()
+    )
+    addresses_by_id = {}
+    if address_ids:
+        address_rows = db.query(Address).filter(Address.id.in_(address_ids)).all()
+        addresses_by_id = {row.id: row for row in address_rows}
+    commune_by_id = {}
+    province_by_id = {}
+    commune_ids = [row.commune_id for row in relays if row.commune_id]
+    province_ids = [row.province_id for row in relays if row.province_id]
+    if commune_ids:
+        commune_rows = db.query(Commune).filter(Commune.id.in_(commune_ids)).all()
+        commune_by_id = {row.id: row.name for row in commune_rows}
+    if province_ids:
+        province_rows = db.query(Province).filter(Province.id.in_(province_ids)).all()
+        province_by_id = {row.id: row.name for row in province_rows}
+    manager_rows = (
+        db.query(User)
+        .filter(User.relay_id.in_(relay_ids), User.user_type == UserTypeEnum.agent)
+        .order_by(User.created_at.asc())
+        .all()
+    )
+    manager_phone_by_relay: dict = {}
+    for user in manager_rows:
+        if user.relay_id and user.relay_id not in manager_phone_by_relay:
+            manager_phone_by_relay[user.relay_id] = user.phone_e164
+
+    rows: list[dict] = []
+    for relay in relays:
+        address = addresses_by_id.get(relay.address_id) if relay.address_id else None
+        current_present = int(counts.get(relay.id, 0))
+        capacity = relay.storage_capacity
+        if capacity is None:
+            available = None
+            utilization_ratio = None
+            is_full = False
+        else:
+            available = max(0, capacity - current_present)
+            is_full = current_present >= capacity
+            utilization_ratio = (
+                1.0 if capacity == 0 and current_present > 0 else (current_present / capacity if capacity > 0 else 0.0)
+            )
+
+        if not relay.is_active:
+            op_status = "closed"
+        elif is_full:
+            op_status = "full"
+        else:
+            op_status = "open"
+
+        row = {
+            "id": relay.id,
+            "relay_code": relay.relay_code,
+            "name": relay.name,
+            "type": relay.type,
+            "province_id": relay.province_id,
+            "commune_id": relay.commune_id,
+            "address_id": relay.address_id,
+            "opening_hours": relay.opening_hours,
+            "storage_capacity": relay.storage_capacity,
+            "is_active": relay.is_active,
+            "current_present": current_present,
+            "available": available,
+            "utilization_ratio": utilization_ratio,
+            "operational_status": op_status,
+            "latitude": float(address.latitude) if address and address.latitude is not None else None,
+            "longitude": float(address.longitude) if address and address.longitude is not None else None,
+            "quartier": address.quartier if address else None,
+            "commune_name": commune_by_id.get(relay.commune_id) if relay.commune_id else (address.commune if address else None),
+            "province_name": province_by_id.get(relay.province_id) if relay.province_id else (address.province if address else None),
+            "landmark": address.landmark if address else None,
+            "manager_phone": manager_phone_by_relay.get(relay.id),
+        }
+        rows.append(row)
+
+    if operational_status:
+        wanted = operational_status.strip().lower()
+        rows = [row for row in rows if row.get("operational_status") == wanted]
+    return rows
+
+
+def create_relay_manager_application(
+    db: Session,
+    payload: RelayManagerApplicationCreate,
+    *,
+    created_by_user_id=None,
+) -> RelayManagerApplication:
+    row = RelayManagerApplication(
+        relay_id=payload.relay_id,
+        manager_name=payload.manager_name,
+        manager_phone=payload.manager_phone,
+        manager_email=payload.manager_email,
+        notes=payload.notes,
+        status="pending",
+        training_completed=False,
+        created_by_user_id=created_by_user_id,
+    )
+    db.add(row)
+    log_action(db, entity="relay_manager_applications", action="create")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_relay_manager_applications(
+    db: Session,
+    *,
+    status: str | None = None,
+    relay_id=None,
+    limit: int = 100,
+) -> list[RelayManagerApplication]:
+    query = db.query(RelayManagerApplication)
+    if status:
+        query = query.filter(RelayManagerApplication.status == status)
+    if relay_id:
+        query = query.filter(RelayManagerApplication.relay_id == relay_id)
+    limit = max(1, min(limit, 500))
+    return query.order_by(RelayManagerApplication.created_at.desc()).limit(limit).all()
+
+
+def review_relay_manager_application(
+    db: Session,
+    application_id,
+    payload: RelayManagerApplicationReview,
+    *,
+    reviewed_by_user_id=None,
+) -> RelayManagerApplication:
+    row = db.query(RelayManagerApplication).filter(RelayManagerApplication.id == application_id).first()
+    if not row:
+        raise RelayNotFoundError("Relay manager application not found")
+    row.status = payload.status
+    row.training_completed = bool(payload.training_completed)
+    if payload.notes:
+        row.notes = payload.notes
+    row.reviewed_by_user_id = reviewed_by_user_id
+    row.reviewed_at = func.now()
+    log_action(db, entity="relay_manager_applications", action="review")
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def get_relay(db: Session, relay_id: UUID) -> RelayPoint | None:

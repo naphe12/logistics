@@ -833,6 +833,7 @@ def capture_delivery_proof(
     *,
     receiver_name: str,
     signature: str,
+    photo_url: str | None = None,
     geo_lat: float | None = None,
     geo_lng: float | None = None,
 ) -> Shipment:
@@ -844,6 +845,7 @@ def capture_delivery_proof(
     extra["delivery_proof"] = {
         "receiver_name": receiver_name,
         "signature": signature,
+        "photo_url": photo_url,
         "geo_lat": geo_lat,
         "geo_lng": geo_lng,
         "captured_at": datetime.now(UTC).isoformat(),
@@ -855,7 +857,12 @@ def capture_delivery_proof(
             shipment_id=shipment.id,
             relay_id=shipment.destination_relay_id or shipment.destination,
             event_type="delivery_proof_captured",
-            extra={"receiver_name": receiver_name, "geo_lat": geo_lat, "geo_lng": geo_lng},
+            extra={
+                "receiver_name": receiver_name,
+                "photo_url": photo_url,
+                "geo_lat": geo_lat,
+                "geo_lng": geo_lng,
+            },
         )
     )
     db.commit()

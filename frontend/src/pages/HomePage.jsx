@@ -51,6 +51,77 @@ export default function HomePage() {
     },
   }
   const roleHome = homeByRole[dashboardRole] || homeByRole.client
+  const quickActionGroupsByRole = {
+    client: [
+      {
+        title: 'Expedition',
+        actions: [
+          { to: '/shipments', label: 'Nouveau colis' },
+          { to: '/shipment-schedules', label: 'Programmer un envoi' },
+        ],
+      },
+      {
+        title: 'Suivi',
+        actions: [
+          { to: '/tracking', label: 'Suivre mes colis' },
+          { to: '/incidents', label: 'Creer reclamation' },
+        ],
+      },
+      {
+        title: 'Paiement',
+        actions: [{ to: '/payments', label: 'Voir paiements' }],
+      },
+    ],
+    agent: [
+      {
+        title: 'Operations live',
+        actions: [
+          { to: '/tracking', label: 'Operations terrain' },
+          { to: '/transport', label: 'Trips & scans' },
+        ],
+      },
+      {
+        title: 'Execution',
+        actions: [
+          { to: '/shipments', label: 'Creation colis' },
+          { to: '/shipment-schedules', label: 'Envois programmes' },
+        ],
+      },
+      {
+        title: 'Support',
+        actions: [
+          { to: '/relays', label: 'Reseau relais' },
+          { to: '/incidents', label: 'Incidents' },
+        ],
+      },
+    ],
+    admin: [
+      {
+        title: 'Control Tower',
+        actions: [
+          { to: '/backoffice', label: 'Backoffice S1' },
+          { to: '/dashboard', label: 'Vue globale' },
+        ],
+      },
+      {
+        title: 'Operations',
+        actions: [
+          { to: '/tracking', label: 'Tracking live' },
+          { to: '/transport', label: 'Transport' },
+          { to: '/relays', label: 'Reseau relais' },
+        ],
+      },
+      {
+        title: 'Business',
+        actions: [
+          { to: '/shipments', label: 'Colis' },
+          { to: '/payments', label: 'Paiements' },
+          { to: '/incidents', label: 'Incidents & claims' },
+        ],
+      },
+    ],
+  }
+  const quickActionGroups = quickActionGroupsByRole[dashboardRole] || quickActionGroupsByRole.client
 
   function pct(value) {
     if (typeof value !== 'number' || Number.isNaN(value)) return '--'
@@ -502,19 +573,20 @@ export default function HomePage() {
 
       <article className="panel home-simple-card">
         <p className="eyebrow">Acces Rapide</p>
-        <h3>Navigation principale</h3>
-        <div className="home-simple-links">
-          <Link to={roleHome.actions[0].to} className="button-link">
-            {roleHome.actions[0].label}
-          </Link>
-          <Link to={roleHome.actions[1].to} className="button-link button-ghost">
-            {roleHome.actions[1].label}
-          </Link>
-          {dashboardRole === 'admin' ? (
-            <Link to="/backoffice" className="button-link button-ghost">
-              Backoffice
-            </Link>
-          ) : null}
+        <h3>Menus et actions rapides</h3>
+        <div className="quick-groups-grid">
+          {quickActionGroups.map((group) => (
+            <section key={group.title} className="quick-group-card">
+              <p className="quick-group-title">{group.title}</p>
+              <div className="home-simple-links">
+                {group.actions.map((action) => (
+                  <Link key={action.to} to={action.to} className="button-link button-ghost">
+                    {action.label}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
       </article>
     </section>
